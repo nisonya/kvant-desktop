@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kvantorium</title>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+  <div class="app-wrap">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
+        <div class="sidebar-header">
+          <div class="profile" id="profileBtn">
+            <div class="profile-avatar">
+              <svg class="profile-avatar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+            <span class="profile-name" id="profileName">—</span>
+          </div>
+        </div>
+        <nav class="sidebar-nav">
+          <div class="nav-group">
+            <div class="nav-group-title">Мероприятия</div>
+            <a href="#" class="nav-item" data-view="org">Организация</a>
+            <a href="#" class="nav-item active" data-view="part">Участие</a>
+          </div>
+          <a href="#" class="nav-item" data-view="rent">Бронь</a>
+          <a href="#" class="nav-item" data-view="notifications">Уведомления</a>
+          <a href="#" class="nav-item" data-view="docs">Документы</a>
+          <a href="#" class="nav-item" data-view="schedule">Расписание</a>
+          <a href="#" class="nav-item" data-view="export">Выгрузка</a>
+          <a href="#" class="nav-item" data-view="students">Ученики</a>
+          <a href="#" class="nav-item" data-view="employees">Сотрудники</a>
+        </nav>
+      </div>
+    </aside>
+    <div class="toggle-wrap">
+      <button class="sidebar-toggle" id="sidebarToggle" title="Меню" aria-label="Свернуть меню">
+        <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+    </div>
+    <main class="content">
+      <h1 class="content-title" id="contentTitle">Мероприятия — Участие</h1>
+      <div class="content-body" id="contentBody"></div>
+    </main>
+  </div>
+  <script src="../js/main.js"></script>
+</body>
+</html>

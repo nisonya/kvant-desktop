@@ -1,0 +1,54 @@
+/* Bank Gothic, Inter, общие переменные */
+@font-face {
+  font-family: 'Bank Gothic';
+  src: url('../../fonts/BankGothicRuss.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=Roboto:wght@400;500&display=swap');
+
+:root {
+  --font-display: 'Bank Gothic', 'Bebas Neue', sans-serif;
+  --font-body: 'Montserrat', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  --bg-page: #F9F7F5;
+  --bg-card: #F4E0D1;
+  --bg-card-main: #F4E0D1;
+  --bg-input: #ffffff;
+  --bg-sidebar: #F4E0D1;
+  --bg-sidebar-header: #DDF3FA;
+  --bg-tag: #DDF3FA;
+  --accent: #1A237E;
+  --accent-hover: #283593;
+  --accent-soft: rgba(26, 35, 126, 0.08);
+  --text-primary: #0d1440;
+  --text-secondary: #1A237E;
+  --text-muted: #3949ab;
+  --border: #e8e4e1;
+  --error: #c62828;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-page);
+  color: var(--text-primary);
+}

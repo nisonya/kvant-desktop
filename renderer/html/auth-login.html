@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход — Kvantorium</title>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../css/auth-login.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1 class="auth-title">Kvantorium</h1>
+      <p class="auth-subtitle">Войдите в систему</p>
+      <form class="auth-form" id="authForm">
+        <div class="field">
+          <label for="login">Логин</label>
+          <input type="text" id="login" placeholder="Введите логин" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">Пароль</label>
+          <input type="password" id="password" placeholder="Введите пароль" required autocomplete="current-password">
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="remember" checked>
+          <span>Запомнить данные для входа</span>
+        </label>
+        <p class="auth-error" id="authError"></p>
+        <div class="auth-footer">
+          <button type="button" class="btn-back" id="btnBack">← Назад</button>
+          <button type="submit" class="btn-primary" id="submitBtn">Войти</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="../js/auth-login.js"></script>
+</body>
+</html>

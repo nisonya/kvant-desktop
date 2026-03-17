@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Подключение — Kvantorium</title>
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../css/auth-url.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1 class="auth-title">Kvantorium</h1>
+      <p class="auth-subtitle">Укажите адрес сервера для подключения</p>
+      <form class="auth-form" id="authForm">
+        <div class="field">
+          <label for="serverUrl">Адрес сервера</label>
+          <input type="url" id="serverUrl" placeholder="https://localhost:3000" required autocomplete="off">
+        </div>
+        <p class="auth-error" id="authError"></p>
+        <button type="submit" class="btn-primary" id="submitBtn">Далее</button>
+      </form>
+    </div>
+  </div>
+  <script src="../js/auth-url.js"></script>
+</body>
+</html>
