@@ -1,3 +1,10 @@
+'use strict';
+
+/**
+ * Экран входа. Запрос к POST /api/auth/login выполняется в main (main.js → auth-login IPC),
+ * как и refresh — см. files/API_DOCUMENTATION.md §3 (тело: login, password; ответ: success, data.accessToken).
+ */
+
 const { ipcRenderer } = require('electron');
 
 const form = document.getElementById('authForm');
@@ -9,70 +16,64 @@ const submitBtn = document.getElementById('submitBtn');
 const btnBack = document.getElementById('btnBack');
 
 function setError(msg) {
-  errorEl.textContent = msg || '';
+  if (errorEl) errorEl.textContent = msg || '';
+}
+
+function unlockFormControls() {
+  if (loginInput) loginInput.disabled = false;
+  if (passwordInput) passwordInput.disabled = false;
+  if (rememberCheckbox) rememberCheckbox.disabled = false;
+  if (btnBack) btnBack.disabled = false;
 }
 
 function setLoading(loading) {
+  if (!submitBtn) return;
   submitBtn.disabled = loading;
-  submitBtn.textContent = loading ? 'Вход...' : 'Войти';
+  submitBtn.textContent = loading ? 'Вход…' : 'Войти';
+  if (!loading) unlockFormControls();
 }
 
-async function apiLogin(baseUrl, login, password) {
-  const res = await fetch(`${baseUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, password })
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
-  if (!data.success) throw new Error(data.error || 'Ошибка входа');
-  return data;
-}
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
-
-  const baseUrl = await ipcRenderer.invoke('get-server-url');
-  const login = loginInput.value.trim();
-  const password = passwordInput.value;
-  const remember = rememberCheckbox.checked;
-
-  if (!baseUrl) {
-    setError('Адрес сервера не задан');
-    setLoading(false);
-    return;
-  }
-
+async function showStartupNotice() {
   try {
-    const data = await apiLogin(baseUrl, login, password);
-    ipcRenderer.send('auth-success', {
-      serverUrl: baseUrl,
-      login: remember ? login : '',
-      password: remember ? password : '',
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      user: data.user,
-      remember
-    });
-  } catch (err) {
-    setError(err.message || 'Ошибка входа');
-    setLoading(false);
+    const notice = await ipcRenderer.invoke('consume-login-notice');
+    if (notice) setError(notice);
+  } catch (e) {
+    console.error('[auth-login] notice', e);
   }
-});
-
-btnBack.addEventListener('click', () => {
-  ipcRenderer.send('navigate-to-url');
-});
-
-async function init() {
-  const creds = await ipcRenderer.invoke('get-saved-credentials');
-  if (creds?.login) loginInput.value = creds.login;
-
-  const auto = await ipcRenderer.invoke('try-auto-login');
-  if (auto?.success) return;
-  if (auto?.sessionExpired) setError('Сессия истекла. Войдите снова.');
+  try {
+    const creds = await ipcRenderer.invoke('get-saved-credentials');
+    if (creds && creds.login && loginInput) loginInput.value = creds.login;
+  } catch (e) {
+    console.error('[auth-login] creds', e);
+  }
 }
 
-init();
+if (form) {
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const login = (loginInput && loginInput.value.trim()) || '';
+    const password = (passwordInput && passwordInput.value) || '';
+    const remember = !!(rememberCheckbox && rememberCheckbox.checked);
+    try {
+      const r = await ipcRenderer.invoke('auth-login', { login, password, remember });
+      if (!r || !r.ok) {
+        setError((r && r.error) || 'Ошибка входа');
+      }
+    } catch (err) {
+      setError(err.message || 'Ошибка входа');
+    } finally {
+      setLoading(false);
+    }
+  });
+}
+
+if (btnBack) {
+  btnBack.addEventListener('click', function () {
+    ipcRenderer.send('navigate-to-url');
+  });
+}
+
+unlockFormControls();
+showStartupNotice().finally(unlockFormControls);

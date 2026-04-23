@@ -1,29 +1,21 @@
 # API Deployer Desktop
 
-Electron-приложение для работы с API. Поддерживает Windows и macOS.
+Десктопное приложение для работы с API. Windows и macOS.
 
-## Установка
+Идёт в комплекте с отдельным приложением для развёртывания API. Здесь осуществляется работа: подключение к серверу по URL, JWT-аутентификация, профили.
+
+## Команды
 
 ```bash
 npm install
-```
-
-## Запуск в режиме разработки
-
-```bash
 npm start
+npm run build:win   # Windows
+npm run build:mac   # macOS
+npm test            # unit-тесты (Jest)
+npm run test:e2e    # E2E-тесты (Playwright)
 ```
 
-## Сборка приложения
+## Документация
 
-**Для Windows:**
-```bash
-npm run build:win
-```
-
-**Для macOS** (только на Mac):
-```bash
-npm run build:mac
-```
-
-Готовые установщики появятся в папке `dist/`.
+- [План развития](DEVELOPMENT_PLAN.md) — этапы, валидация, тесты
+- [API](files/API_DOCUMENTATION.md) — документация API сервера

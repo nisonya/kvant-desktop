@@ -1,15 +1,108 @@
-/* eslint-disable no-console */
-console.log('[main] script start');
+'use strict';
 
 const { ipcRenderer } = require('electron');
-console.log('[main] ipcRenderer loaded');
+const path = require('path');
+
+const requireJs = (relPath) => require(path.join(__dirname, '..', 'js', relPath));
+const { setupResponsibleModal } = requireJs('events/event-responsible-modal.js');
+const { setupEventUnsavedModal } = requireJs('events/event-unsaved-modal.js');
+
+let renderEventsViewCached = null;
+function renderEventsView(container, type) {
+  if (!renderEventsViewCached) {
+    renderEventsViewCached = requireJs('events/events-view.js');
+  }
+  return renderEventsViewCached(container, type);
+}
+
+let renderEmployeesViewCached = null;
+function renderEmployeesView(container) {
+  if (!renderEmployeesViewCached) {
+    renderEmployeesViewCached = requireJs('employees-view.js');
+  }
+  return renderEmployeesViewCached(container);
+}
+
+let renderProfileViewCached = null;
+function renderProfileView(container) {
+  if (!renderProfileViewCached) {
+    renderProfileViewCached = requireJs('profile-view.js');
+  }
+  return renderProfileViewCached(container);
+}
+
+let renderDocsViewCached = null;
+function renderDocsView(container) {
+  if (!renderDocsViewCached) {
+    renderDocsViewCached = requireJs('docs-view.js');
+  }
+  return renderDocsViewCached(container);
+}
+
+let renderGroupsViewCached = null;
+function renderGroupsView(container) {
+  if (!renderGroupsViewCached) {
+    renderGroupsViewCached = requireJs('groups-view.js');
+  }
+  return renderGroupsViewCached(container);
+}
+
+let renderStudentsViewCached = null;
+function renderStudentsView(container) {
+  if (!renderStudentsViewCached) {
+    renderStudentsViewCached = requireJs('students-view.js');
+  }
+  return renderStudentsViewCached(container);
+}
+
+let renderScheduleViewCached = null;
+function renderScheduleView(container) {
+  if (!renderScheduleViewCached) {
+    renderScheduleViewCached = requireJs('schedule-view.js');
+  }
+  return renderScheduleViewCached(container);
+}
+
+let renderAttendanceViewCached = null;
+function renderAttendanceView(container) {
+  if (!renderAttendanceViewCached) {
+    renderAttendanceViewCached = requireJs('attendance-view.js');
+  }
+  return renderAttendanceViewCached(container);
+}
+
+let renderPixelsViewCached = null;
+function renderPixelsView(container) {
+  if (!renderPixelsViewCached) {
+    renderPixelsViewCached = requireJs('pixels-view.js');
+  }
+  return renderPixelsViewCached(container);
+}
+
+let renderRentViewCached = null;
+function renderRentView(container) {
+  if (!renderRentViewCached) {
+    renderRentViewCached = requireJs('rent-view.js');
+  }
+  return renderRentViewCached(container);
+}
+
+let renderExportViewCached = null;
+function renderExportView(container) {
+  if (!renderExportViewCached) {
+    renderExportViewCached = requireJs('export-view.js');
+  }
+  return renderExportViewCached(container);
+}
 
 const VIEWS = {
   org: 'Мероприятия — Организация',
   part: 'Мероприятия — Участие',
+  attendance: 'Посещаемость',
+  pixels: 'Пиксели',
   rent: 'Бронь',
-  notifications: 'Уведомления',
   docs: 'Документы',
+  groups: 'Группы',
   schedule: 'Расписание',
   export: 'Выгрузка',
   students: 'Ученики',
@@ -17,18 +110,20 @@ const VIEWS = {
   profile: 'Профиль'
 };
 
+function resolveSidebarUserLabel(user) {
+  if (!user || typeof user !== 'object') return '—';
+  var fullName = [user.second_name, user.first_name, user.patronymic].filter(Boolean).join(' ').trim();
+  var preferred = user.name || user.full_name || fullName;
+  if (preferred) return String(preferred);
+  var fallback = user.login || user.email
+    || ((user.id != null || user.id_employees != null) ? 'Пользователь' : null);
+  return fallback ? String(fallback) : '—';
+}
+
 function showView(viewId) {
-  console.log('[main] showView', viewId);
   const contentTitle = document.getElementById('contentTitle');
   const contentBody = document.getElementById('contentBody');
-  if (!contentTitle) {
-    console.error('[main] contentTitle not found');
-    return;
-  }
-  if (!contentBody) {
-    console.error('[main] contentBody not found');
-    return;
-  }
+  if (!contentTitle || !contentBody) return;
 
   contentTitle.textContent = VIEWS[viewId] || viewId;
   contentBody.innerHTML = '';
@@ -36,317 +131,189 @@ function showView(viewId) {
   document.querySelectorAll('.nav-item').forEach(function (el) {
     el.classList.toggle('active', el.dataset.view === viewId);
   });
+  document.querySelectorAll('.nav-group-row').forEach(function (row) {
+    row.classList.toggle('nav-group-row--active', !!row.querySelector('.nav-item.active'));
+  });
 
   if (viewId === 'org' || viewId === 'part') {
-    renderEventsView(contentBody, viewId);
-  } else {
-    contentBody.innerHTML = '<p class="content-placeholder">Раздел в разработке</p>';
-  }
-}
-
-async function apiRequest(method, path, body) {
-  const baseUrl = await ipcRenderer.invoke('get-server-url');
-  const token = await ipcRenderer.invoke('get-access-token');
-  if (!baseUrl) throw new Error('Сервер не настроен');
-  const url = baseUrl.replace(/\/$/, '') + path;
-  const opts = {
-    method: method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  };
-  if (token) opts.headers.Authorization = 'Bearer ' + token;
-  const res = await fetch(url, opts);
-  if (res.status === 401) {
-    const newToken = await ipcRenderer.invoke('refresh-access-token');
-    if (newToken) return apiRequest(method, path, body);
-    throw new Error('Сессия истекла');
-  }
-  const data = await res.json().catch(function () { return {}; });
-  if (!res.ok) throw new Error(data.error || 'Ошибка ' + res.status);
-  return data;
-}
-
-function escapeHtml(str) {
-  if (str == null) return '';
-  var d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-function createCustomSelect(id, options, selectedValue, placeholder) {
-  var html = '<div class="custom-select" id="' + id + '">';
-  html += '<button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">';
-  html += '<span class="custom-select-value">' + escapeHtml(placeholder || 'Выберите') + '</span>';
-  html += '<span class="custom-select-arrow"></span></button>';
-  html += '<div class="custom-select-dropdown" role="listbox">';
-  options.forEach(function (opt) {
-    var val = opt.value !== undefined && opt.value !== null ? String(opt.value) : '';
-    var label = opt.label || opt.name || val || '—';
-    var sel = (selectedValue === val || (selectedValue === '' && val === '')) ? ' custom-select-option--selected' : '';
-    html += '<div class="custom-select-option' + sel + '" role="option" data-value="' + escapeHtml(String(opt.value === '' ? '' : opt.value)) + '">' + escapeHtml(label) + '</div>';
-  });
-  html += '</div></div>';
-  return html;
-}
-
-function initCustomSelect(containerId, onChange) {
-  var wrap = document.getElementById(containerId);
-  if (!wrap) return null;
-  var trigger = wrap.querySelector('.custom-select-trigger');
-  var valueEl = wrap.querySelector('.custom-select-value');
-  var dropdown = wrap.querySelector('.custom-select-dropdown');
-  var options = wrap.querySelectorAll('.custom-select-option');
-  var currentValue = '';
-
-  options.forEach(function (opt) {
-    if (opt.classList.contains('custom-select-option--selected')) {
-      currentValue = opt.getAttribute('data-value') || opt.dataset.value || '';
-    }
-    opt.addEventListener('click', function () {
-      var v = this.dataset.value || '';
-      currentValue = v;
-      valueEl.textContent = this.textContent;
-      options.forEach(function (o) { o.classList.remove('custom-select-option--selected'); });
-      this.classList.add('custom-select-option--selected');
-      wrap.classList.remove('custom-select--open');
-      trigger.setAttribute('aria-expanded', 'false');
-      if (onChange) onChange(v);
-    });
-  });
-
-  trigger.addEventListener('click', function (e) {
-    e.stopPropagation();
-    var isOpen = wrap.classList.toggle('custom-select--open');
-    trigger.setAttribute('aria-expanded', isOpen);
-  });
-
-  document.addEventListener('click', function () {
-    wrap.classList.remove('custom-select--open');
-    trigger.setAttribute('aria-expanded', 'false');
-  });
-
-  return {
-    getValue: function () { return currentValue; },
-    setOptions: function (opts, selectedVal) {
-      var sel = selectedVal !== undefined ? selectedVal : currentValue;
-      currentValue = sel;
-      dropdown.innerHTML = opts.map(function (o) {
-        var v = o.value !== undefined && o.value !== null ? String(o.value) : '';
-        var lbl = o.label || o.name || v || '—';
-        var s = (sel === v || (sel === '' && v === '')) ? ' custom-select-option--selected' : '';
-        return '<div class="custom-select-option' + s + '" role="option" data-value="' + escapeHtml(v) + '">' + escapeHtml(lbl) + '</div>';
-      }).join('');
-      var selOpt = opts.find(function (o) {
-        var v = o.value !== undefined && o.value !== null ? String(o.value) : '';
-        return sel === v || (sel === '' && v === '');
-      });
-      valueEl.textContent = selOpt ? (selOpt.label || selOpt.name || '—') : (opts[0] ? (opts[0].label || opts[0].name || '—') : '');
-      var newOpts = dropdown.querySelectorAll('.custom-select-option');
-      newOpts.forEach(function (opt) {
-        opt.addEventListener('click', function () {
-          currentValue = this.dataset.value || '';
-          valueEl.textContent = this.textContent;
-          newOpts.forEach(function (o) { o.classList.remove('custom-select-option--selected'); });
-          this.classList.add('custom-select-option--selected');
-          wrap.classList.remove('custom-select--open');
-          trigger.setAttribute('aria-expanded', 'false');
-          if (onChange) onChange(currentValue);
-        });
-      });
-    }
-  };
-}
-
-function renderEventsView(container, type) {
-  console.log('[main] renderEventsView', type);
-  container.innerHTML = [
-    '<div class="events-view">',
-    '  <div class="events-toolbar">',
-    '    <input type="text" class="events-search" placeholder="Поиск..." id="eventsSearch">',
-    createCustomSelect('eventsSortTime', [
-      { value: 'asc', label: 'По времени: раньше' },
-      { value: 'desc', label: 'По времени: позже' }
-    ], 'asc', 'По времени: раньше'),
-    createCustomSelect('eventsSortEmployee', [{ value: '', label: 'Все сотрудники' }], '', 'Все сотрудники'),
-    '  </div>',
-    '  <div class="events-list" id="eventsList"><div class="events-loading">Загрузка...</div></div>',
-    '  <div class="events-empty" id="eventsEmpty" style="display:none">Нет мероприятий</div>',
-    '  <div class="events-error" id="eventsError" style="display:none"><span id="eventsErrorText"></span><button type="button" id="eventsErrorRetry">Повторить</button></div>',
-    '</div>'
-  ].join('');
-
-  const listEl = document.getElementById('eventsList');
-  const emptyEl = document.getElementById('eventsEmpty');
-  const errorEl = document.getElementById('eventsError');
-  const errorText = document.getElementById('eventsErrorText');
-  const searchInput = document.getElementById('eventsSearch');
-  const retryBtn = document.getElementById('eventsErrorRetry');
-
-  var sortTimeSelect = initCustomSelect('eventsSortTime', function () { load(); });
-  var sortEmployeeSelect = initCustomSelect('eventsSortEmployee', function () { load(); });
-
-  const sortField = type === 'part' ? 'registration_deadline' : 'dates_of_event';
-
-  function showState(s, msg) {
-    listEl.style.display = (s === 'loading' || s === 'list') ? 'flex' : 'none';
-    emptyEl.style.display = s === 'empty' ? 'block' : 'none';
-    errorEl.style.display = s === 'error' ? 'block' : 'none';
-    if (s === 'loading') listEl.innerHTML = '<div class="events-loading">Загрузка...</div>';
-    if (s === 'error' && errorText) errorText.textContent = msg || '';
-  }
-
-  function escapeHtml(str) {
-    if (str == null) return '';
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  function formatDate(str) {
-    if (!str) return '—';
-    var d = String(str);
-    if (/^\d{4}-\d{2}-\d{2}/.test(d)) {
-      var p = d.split(/[-T]/);
-      return (p[2] || '') + '.' + (p[1] || '') + '.' + (p[0] || '');
-    }
-    return d;
-  }
-
-  function cardHtml(item, resp) {
-    var dateLabel = type === 'part' ? 'регистрация до:' : 'дата проведения:';
-    var dateVal = type === 'part' ? (item.registration_deadline || item.dates_of_event) : item.dates_of_event;
-    var respHtml = (resp || []).map(function (r) {
-      var n = [r.first_name, r.second_name].filter(Boolean).join(' ') || '—';
-      return '<span class="event-card-responsible">' + escapeHtml(n) + '</span>';
-    }).join('');
-    return '<div class="event-card">' +
-      '<h3 class="event-card-title">' + escapeHtml(item.name || '—') + '</h3>' +
-      (type === 'part' && item.form_of_holding ? '<p class="event-card-type">' + escapeHtml(item.form_of_holding) + '</p>' : '') +
-      (type === 'org' && item.day_of_the_week ? '<p class="event-card-day">' + escapeHtml(item.day_of_the_week) + '</p>' : '') +
-      '<p class="event-card-date"><span class="event-card-date-label">' + dateLabel + '</span> ' + formatDate(dateVal) + '</p>' +
-      '<div class="event-card-responsibles">' + respHtml + '</div></div>';
-  }
-
-  async function load() {
-    console.log('[main] events load start');
-    showState('loading');
     try {
-      var filters = { period: new Date().getFullYear().toString() };
-      if (searchInput && searchInput.value.trim()) filters.search = searchInput.value.trim();
-      var empVal = sortEmployeeSelect ? sortEmployeeSelect.getValue() : '';
-      if (empVal) filters.employee_id = parseInt(empVal, 10);
-      var sortOrder = sortTimeSelect ? sortTimeSelect.getValue() : 'asc';
-      var sort = [{ field: sortField, order: sortOrder }];
-
-      var base = type === 'org' ? '/api/events/org' : '/api/events/part';
-      var listRes = await apiRequest('POST', base + '/list', { filters: filters, sort: sort, page: 1, limit: 20 });
-      console.log('[main] list response', JSON.stringify(listRes).slice(0, 200));
-
-      if (listRes && listRes.success === false) throw new Error(listRes.error || 'Ошибка API');
-      var items = listRes.data || listRes || [];
-      if (!Array.isArray(items)) items = [];
-
-      var cards = [];
-      for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        var resp = [];
-        try {
-          var rRes = await apiRequest('GET', base + '/responsible/' + item.id);
-          resp = rRes.data || rRes;
-          resp = Array.isArray(resp) ? resp : [];
-        } catch (e) {
-          console.warn('[main] responsible fail', item.id, e);
-        }
-        cards.push(cardHtml(item, resp));
-      }
-
-      if (cards.length === 0) {
-        showState('empty');
-        return;
-      }
-      listEl.innerHTML = cards.join('');
-      listEl.className = 'events-list events-cards';
-      showState('list');
-      console.log('[main] events loaded', cards.length);
+      renderEventsView(contentBody, viewId);
     } catch (err) {
-      console.error('[main] events load error', err);
-      showState('error', err.message || 'Ошибка загрузки');
+      console.error('[main] renderEventsView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить раздел мероприятий: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
     }
+    return;
   }
 
-  async function loadEmployees() {
+  if (viewId === 'employees') {
     try {
-      var res = await apiRequest('GET', '/api/employees');
-      var arr = res.data || res || [];
-      if (!Array.isArray(arr)) arr = [];
-      var opts = [{ value: '', label: 'Все сотрудники' }];
-      arr.forEach(function (e) {
-        var active = e.is_active !== undefined ? e.is_active : (e.active !== undefined ? e.active : true);
-        if (!active) return;
-        var id = e.id_employees || e.id;
-        var name = e.name || [e.first_name, e.second_name, e.patronymic].filter(Boolean).join(' ') || '—';
-        opts.push({ value: String(id || ''), label: name });
-      });
-      if (sortEmployeeSelect && sortEmployeeSelect.setOptions) {
-        sortEmployeeSelect.setOptions(opts, '');
-      }
-    } catch (e) {
-      console.warn('[main] employees load fail', e);
+      renderEmployeesView(contentBody);
+    } catch (err) {
+      console.error('[main] renderEmployeesView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить раздел сотрудников: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
     }
+    return;
   }
 
-  if (searchInput) searchInput.addEventListener('input', function () { setTimeout(load, 300); });
-  if (retryBtn) retryBtn.addEventListener('click', load);
+  if (viewId === 'profile') {
+    try {
+      renderProfileView(contentBody);
+    } catch (err) {
+      console.error('[main] renderProfileView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить профиль: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
 
-  loadEmployees().then(load).catch(function (e) {
-    console.error('[main] init fail', e);
-    showState('error', e.message || 'Ошибка');
-  });
+  if (viewId === 'docs') {
+    try {
+      renderDocsView(contentBody);
+    } catch (err) {
+      console.error('[main] renderDocsView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить документы: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'groups') {
+    try {
+      renderGroupsView(contentBody);
+    } catch (err) {
+      console.error('[main] renderGroupsView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить группы: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'students') {
+    try {
+      renderStudentsView(contentBody);
+    } catch (err) {
+      console.error('[main] renderStudentsView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить учеников: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'schedule') {
+    try {
+      renderScheduleView(contentBody);
+    } catch (err) {
+      console.error('[main] renderScheduleView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить расписание: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'attendance') {
+    try {
+      renderAttendanceView(contentBody);
+    } catch (err) {
+      console.error('[main] renderAttendanceView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить посещаемость: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'pixels') {
+    try {
+      renderPixelsView(contentBody);
+    } catch (err) {
+      console.error('[main] renderPixelsView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить пиксели: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'rent') {
+    try {
+      renderRentView(contentBody);
+    } catch (err) {
+      console.error('[main] renderRentView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить бронь: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  if (viewId === 'export') {
+    try {
+      renderExportView(contentBody);
+    } catch (err) {
+      console.error('[main] renderExportView failed', err);
+      contentBody.innerHTML = '<p class="content-error">Не удалось загрузить выгрузку: ' + (err && err.message ? err.message : 'ошибка') + '</p>';
+    }
+    return;
+  }
+
+  contentBody.innerHTML = '<p class="content-placeholder">Раздел в разработке</p>';
 }
 
 function init() {
-  console.log('[main] init start');
-  var profileName = document.getElementById('profileName');
-  var profileBtn = document.getElementById('profileBtn');
-  var sidebar = document.getElementById('sidebar');
-  var sidebarToggle = document.getElementById('sidebarToggle');
+  const profileName = document.getElementById('profileName');
+  const profileBtn = document.getElementById('profileBtn');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebarToggle');
 
   if (profileName) {
     ipcRenderer.invoke('get-user').then(function (user) {
-      profileName.textContent = (user && user.id) ? 'Пользователь' : '—';
+      profileName.textContent = resolveSidebarUserLabel(user);
+    }).catch(function (err) {
+      console.warn('[main] get-user', err);
     });
   }
 
   if (profileBtn) profileBtn.addEventListener('click', function () { showView('profile'); });
 
   if (sidebarToggle && sidebar) {
+    function syncSidebarToggleState() {
+      const collapsed = sidebar.classList.contains('collapsed');
+      sidebarToggle.classList.toggle('collapsed', collapsed);
+      const tip = collapsed ? 'Развернуть меню' : 'Свернуть меню';
+      sidebarToggle.setAttribute('aria-label', tip);
+      sidebarToggle.setAttribute('title', tip);
+    }
     sidebarToggle.addEventListener('click', function () {
       sidebar.classList.toggle('collapsed');
-      var c = sidebar.classList.contains('collapsed');
-      sidebarToggle.classList.toggle('collapsed', c);
-      sidebarToggle.setAttribute('aria-label', c ? 'Развернуть меню' : 'Свернуть меню');
+      syncSidebarToggleState();
     });
-    sidebarToggle.classList.toggle('collapsed', sidebar.classList.contains('collapsed'));
+    syncSidebarToggleState();
   }
 
   document.querySelectorAll('.nav-item').forEach(function (item) {
     item.addEventListener('click', function (e) {
       e.preventDefault();
-      var v = item.dataset.view;
+      const v = item.dataset.view;
       if (v) showView(v);
     });
   });
 
+  document.querySelectorAll('[data-action="new-event"]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const v = btn.dataset.view;
+      if (!v) return;
+      const activeNav = document.querySelector('.nav-item.active');
+      const currentView = activeNav && activeNav.dataset.view;
+      if (currentView !== v) showView(v);
+      if (typeof window.__openEventCreate === 'function') window.__openEventCreate();
+    });
+  });
+
+  setupResponsibleModal();
+  setupEventUnsavedModal();
+  window.__openEventById = function (eventId, viewId) {
+    window.__pendingEventOpen = {
+      id: eventId != null ? String(eventId) : '',
+      view: viewId === 'part' ? 'part' : 'org'
+    };
+    showView(window.__pendingEventOpen.view);
+  };
   showView('part');
-  console.log('[main] init done');
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', function () {
-    console.log('[main] DOMContentLoaded');
-    init();
-  });
+  document.addEventListener('DOMContentLoaded', init);
 } else {
-  console.log('[main] DOM already ready');
   init();
 }

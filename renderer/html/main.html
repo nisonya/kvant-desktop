@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kvantorium</title>
+  <title>Кванториум</title>
   <link rel="stylesheet" href="../css/common.css">
   <link rel="stylesheet" href="../css/main.css">
 </head>
@@ -12,7 +12,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-inner">
         <div class="sidebar-header">
-          <div class="profile" id="profileBtn">
+          <div class="profile" id="profileBtn" title="Профиль" role="button" tabindex="0">
             <div class="profile-avatar">
               <svg class="profile-avatar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -25,30 +25,117 @@
         <nav class="sidebar-nav">
           <div class="nav-group">
             <div class="nav-group-title">Мероприятия</div>
-            <a href="#" class="nav-item" data-view="org">Организация</a>
-            <a href="#" class="nav-item active" data-view="part">Участие</a>
+            <div class="nav-group-row">
+              <a href="#" class="nav-item" data-view="org" title="Организация">
+                <span class="nav-item-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4"/></svg>
+                </span>
+                <span class="nav-item-label">Организация</span>
+              </a>
+              <button type="button" class="nav-item-add" data-view="org" data-action="new-event" title="Новое мероприятие" aria-label="Новое мероприятие (организация)">+</button>
+            </div>
+            <div class="nav-group-row">
+              <a href="#" class="nav-item active" data-view="part" title="Участие">
+                <span class="nav-item-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </span>
+                <span class="nav-item-label">Участие</span>
+              </a>
+              <button type="button" class="nav-item-add" data-view="part" data-action="new-event" title="Новое мероприятие" aria-label="Новое мероприятие (участие)">+</button>
+            </div>
           </div>
-          <a href="#" class="nav-item" data-view="rent">Бронь</a>
-          <a href="#" class="nav-item" data-view="notifications">Уведомления</a>
-          <a href="#" class="nav-item" data-view="docs">Документы</a>
-          <a href="#" class="nav-item" data-view="schedule">Расписание</a>
-          <a href="#" class="nav-item" data-view="export">Выгрузка</a>
-          <a href="#" class="nav-item" data-view="students">Ученики</a>
-          <a href="#" class="nav-item" data-view="employees">Сотрудники</a>
+          <a href="#" class="nav-item" data-view="attendance" title="Посещаемость">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/><path d="M16 3h5v5"/></svg>
+            </span>
+            <span class="nav-item-label">Посещаемость</span>
+          </a>
+          <a href="#" class="nav-item" data-view="pixels" title="Пиксели">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </span>
+            <span class="nav-item-label">Пиксели</span>
+          </a>
+          <a href="#" class="nav-item" data-view="rent" title="Бронь">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+            </span>
+            <span class="nav-item-label">Бронь</span>
+          </a>
+          <a href="#" class="nav-item" data-view="docs" title="Документы">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+            </span>
+            <span class="nav-item-label">Документы</span>
+          </a>
+          <a href="#" class="nav-item" data-view="schedule" title="Расписание">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </span>
+            <span class="nav-item-label">Расписание</span>
+          </a>
+          <a href="#" class="nav-item" data-view="export" title="Выгрузка">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </span>
+            <span class="nav-item-label">Выгрузка</span>
+          </a>
+          <a href="#" class="nav-item" data-view="students" title="Ученики">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5-10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            </span>
+            <span class="nav-item-label">Ученики</span>
+          </a>
+          <a href="#" class="nav-item" data-view="groups" title="Группы">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <span class="nav-item-label">Группы</span>
+          </a>
+          <a href="#" class="nav-item" data-view="employees" title="Сотрудники">
+            <span class="nav-item-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+            </span>
+            <span class="nav-item-label">Сотрудники</span>
+          </a>
         </nav>
+        <div class="sidebar-footer">
+          <button type="button" class="sidebar-toggle" id="sidebarToggle" title="Меню" aria-label="Свернуть меню">
+            <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </aside>
-    <div class="toggle-wrap">
-      <button class="sidebar-toggle" id="sidebarToggle" title="Меню" aria-label="Свернуть меню">
-        <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M15 18l-6-6 6-6"/>
-        </svg>
-      </button>
-    </div>
     <main class="content">
       <h1 class="content-title" id="contentTitle">Мероприятия — Участие</h1>
       <div class="content-body" id="contentBody"></div>
     </main>
+  </div>
+  <div id="eventRespModal" class="modal-overlay" hidden aria-hidden="true">
+    <div class="modal-dialog resp-modal" role="dialog" aria-modal="true" aria-labelledby="eventRespModalTitle" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 id="eventRespModalTitle" class="modal-title">Ответственные</h2>
+        <button type="button" class="modal-close" id="eventRespModalClose" aria-label="Закрыть">&times;</button>
+      </div>
+      <div class="modal-body" id="eventRespModalBody"></div>
+    </div>
+  </div>
+  <div id="eventUnsavedModal" class="modal-overlay" hidden aria-hidden="true">
+    <div class="modal-dialog event-unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="eventUnsavedTitle" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 id="eventUnsavedTitle" class="modal-title">Несохранённые изменения</h2>
+        <button type="button" class="modal-close" id="eventUnsavedClose" aria-label="Отменить выход">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="event-unsaved-text">Точно хотите выйти?</p>
+        <div class="event-unsaved-actions">
+          <button type="button" class="event-unsaved-btn event-unsaved-btn--primary" id="eventUnsavedSaveExit">Сохранить и выйти</button>
+          <button type="button" class="event-unsaved-btn" id="eventUnsavedDiscardExit">Выйти без сохранения</button>
+        </div>
+      </div>
+    </div>
   </div>
   <script src="../js/main.js"></script>
 </body>
