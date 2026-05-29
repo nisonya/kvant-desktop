@@ -130,10 +130,16 @@ const CRITERIA_COLUMNS = [
   { key: 'special_achievements', label: 'Особые достижения', mode: 'number', hint: 'Количество по усмотрению наставника.' },
   { key: 'fine', label: 'Штрафы', mode: 'penalty', hint: 'Количество по усмотрению наставника (вычитается из суммы).' },
   {
-    key: '__attendance__',
-    label: 'Посещение',
+    key: '__attendance_percent__',
+    label: '% посещаемости',
     mode: 'readonly',
-    hint: 'Только для чтения. При посещении нескольких групп берется показатель с лучшим результатом.'
+    hint: 'Только для чтения. При посещении нескольких групп берется лучший процент посещаемости.'
+  },
+  {
+    key: '__attendance__',
+    label: 'Баллы за посещаемость',
+    mode: 'readonly',
+    hint: '94% и выше — 100; 85–93% — 80; 70–84% — 60; 40–69% — 30; меньше 40% — 0.'
   },
   { key: '__total__', label: 'Итого', mode: 'readonly-total', hint: 'Сумма всех критериев ученика с учетом посещаемости и штрафов.' }
 ];
@@ -142,7 +148,6 @@ const EDITABLE_PIXEL_KEYS = CRITERIA_COLUMNS
   .filter(function (c) { return c.mode !== 'readonly' && c.mode !== 'readonly-total' && c.key.indexOf('__') !== 0; })
   .map(function (c) { return c.key; });
 
-const ATTENDANCE_KEYS = ['attendance', 'attendance_points', 'visit_points', 'visits', 'presence_pixels'];
 const ADMIN_ACCESS_LEVELS = [1, 4, 6];
 const DANGER_ROLE_KEYS = ['root', 'admin', 'administrator', 'leader', 'руководитель'];
 
@@ -172,24 +177,63 @@ function getStudentName(row) {
   return combined || '—';
 }
 
-function getAttendancePoints(row) {
-  for (var i = 0; i < ATTENDANCE_KEYS.length; i++) {
-    var key = ATTENDANCE_KEYS[i];
-    if (row && row[key] != null && row[key] !== '') return asInt(row[key]);
+function normalizeStudentNameKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function getAttendanceStudentName(row) {
+  if (!row || typeof row !== 'object') return '—';
+  var direct = row.full_name || row.fio;
+  if (direct && String(direct).trim()) return String(direct).trim();
+  var parts = [
+    row.surnameStudent || row.surname || row.second_name || row.last_name,
+    row.nameStudent || row.first_name || row.name,
+    row.patronymic
+  ].map(function (v) { return v == null ? '' : String(v).trim(); }).filter(Boolean);
+  return parts.length ? parts.join(' ') : getStudentName(row);
+}
+
+function getAttendancePercent(row) {
+  if (!row || typeof row !== 'object') return 0;
+  if (row.__attendancePercent != null) return asInt(row.__attendancePercent);
+  var directKeys = ['attendance_percent', 'attendancePercent', 'presence_percent', 'visit_percent'];
+  for (var i = 0; i < directKeys.length; i++) {
+    var value = row[directKeys[i]];
+    if (value != null && value !== '') return Math.max(0, Math.min(100, asInt(value)));
   }
   return 0;
 }
 
+function attendancePercentToPoints(percent) {
+  var n = Math.max(0, Math.min(100, asInt(percent)));
+  if (n >= 94) return 100;
+  if (n >= 85) return 80;
+  if (n >= 70) return 60;
+  if (n >= 40) return 30;
+  return 0;
+}
+
+function getAttendancePoints(row) {
+  return attendancePercentToPoints(getAttendancePercent(row));
+}
+
 function getColumnValue(row, columnKey) {
+  if (columnKey === '__attendance_percent__') return getAttendancePercent(row) + '%';
   if (columnKey === '__attendance__') return getAttendancePoints(row);
   if (columnKey === '__total__') return computeTotal(row);
-  return asInt(row && row[columnKey]);
+  return getEditablePixelValue(row, columnKey);
+}
+
+function getEditablePixelValue(row, key) {
+  var value = asInt(row && row[key]);
+  return key === 'fine' ? Math.abs(value) : value;
 }
 
 function computeTotal(row) {
   var sum = 0;
   EDITABLE_PIXEL_KEYS.forEach(function (key) {
-    sum += asInt(row && row[key]);
+    var value = getEditablePixelValue(row, key);
+    sum += key === 'fine' ? -value : value;
   });
   sum += getAttendancePoints(row);
   return sum;
@@ -212,6 +256,8 @@ module.exports = function renderPixelsView(container) {
   var groups = [];
   var selectedGroupId = null;
   var rows = [];
+  var attendancePercentByStudentId = {};
+  var attendancePercentByStudentName = {};
   var loading = false;
   var canDangerActions = false;
   var actionState = {
@@ -267,7 +313,8 @@ module.exports = function renderPixelsView(container) {
         var attrs = isEditable
           ? ' data-row-index="' + escapeHtmlAttr(String(idx)) + '" data-column-key="' + escapeHtmlAttr(c.key) + '"'
           : '';
-        return '<td class="' + cls + '"' + attrs + '>' + escapeHtml(String(val)) + '</td>';
+        var text = columnTextValue(val);
+        return '<td class="' + cls + '"' + attrs + '>' + escapeHtml(text) + '</td>';
       }).join('');
       return '<tr>' + nameCell + criteriaCells + '</tr>';
     }).join('');
@@ -286,6 +333,10 @@ module.exports = function renderPixelsView(container) {
         openActionModal(rowIndex, columnKey);
       });
     });
+  }
+
+  function columnTextValue(value) {
+    return value == null ? '' : String(value);
   }
 
   function openActionModal(rowIndex, columnKey) {
@@ -327,7 +378,7 @@ module.exports = function renderPixelsView(container) {
     if (column.mode === 'penalty') {
       var p = Number(actionState.customValue);
       if (!isFinite(p)) return null;
-      return -Math.abs(Math.trunc(p));
+      return Math.abs(Math.trunc(p));
     }
     return null;
   }
@@ -358,10 +409,10 @@ module.exports = function renderPixelsView(container) {
       return;
     }
     var updated = Object.assign({}, row);
-    updated[column.key] = asInt(updated[column.key]) + delta;
+    updated[column.key] = getEditablePixelValue(updated, column.key) + delta;
     var payload = { id_student: studentId, id: studentId };
     EDITABLE_PIXEL_KEYS.forEach(function (key) {
-      payload[key] = asInt(updated[key]);
+      payload[key] = getEditablePixelValue(updated, key);
     });
 
     actionState.saving = true;
@@ -467,6 +518,72 @@ module.exports = function renderPixelsView(container) {
     if (!hasSelected) selectedGroupId = groups[0].id;
   }
 
+  function rememberBestAttendancePercent(id, name, percent) {
+    var n = Math.max(0, Math.min(100, asInt(percent)));
+    if (id != null) {
+      var idKey = String(id);
+      attendancePercentByStudentId[idKey] = Math.max(attendancePercentByStudentId[idKey] || 0, n);
+    }
+    var nameKey = normalizeStudentNameKey(name);
+    if (nameKey) {
+      attendancePercentByStudentName[nameKey] = Math.max(attendancePercentByStudentName[nameKey] || 0, n);
+    }
+  }
+
+  function buildGroupAttendancePercents(attendanceRows) {
+    var dates = {};
+    var presentByStudent = {};
+    var nameByStudent = {};
+    attendanceRows.forEach(function (row) {
+      var date = String(row && row.date_of_lesson || '').trim();
+      if (!date) return;
+      dates[date] = true;
+      var sid = getStudentId(row);
+      var studentName = getAttendanceStudentName(row);
+      var key = sid != null ? ('id:' + String(sid)) : ('name:' + normalizeStudentNameKey(studentName));
+      if (!key || key === 'name:') return;
+      nameByStudent[key] = studentName;
+      if (!presentByStudent[key]) presentByStudent[key] = 0;
+      if (Number(row && row.presence) === 1) presentByStudent[key] += 1;
+    });
+    var totalDates = Object.keys(dates).length;
+    if (!totalDates) return;
+    Object.keys(presentByStudent).forEach(function (key) {
+      var percent = Math.round((presentByStudent[key] / totalDates) * 100);
+      var id = key.indexOf('id:') === 0 ? key.slice(3) : null;
+      rememberBestAttendancePercent(id, nameByStudent[key], percent);
+    });
+  }
+
+  async function loadAttendancePercentIndex() {
+    attendancePercentByStudentId = {};
+    attendancePercentByStudentName = {};
+    var targetGroups = groups.length ? groups : [];
+    for (var i = 0; i < targetGroups.length; i++) {
+      /* eslint-disable no-await-in-loop */
+      try {
+        var res = await apiRequest('GET', API.ATTENDANCE.BY_GROUP(targetGroups[i].id));
+        var attendanceRows = unwrapResponse(res);
+        buildGroupAttendancePercents(Array.isArray(attendanceRows) ? attendanceRows : []);
+      } catch (err) {
+        console.warn('[pixels] attendance percent by group', targetGroups[i] && targetGroups[i].id, err);
+      }
+      /* eslint-enable no-await-in-loop */
+    }
+  }
+
+  function applyAttendancePercentsToRows() {
+    rows = rows.map(withAttendancePercent);
+  }
+
+  function withAttendancePercent(row) {
+      var sid = getStudentId(row);
+      var byId = sid != null ? attendancePercentByStudentId[String(sid)] : null;
+      var byName = attendancePercentByStudentName[normalizeStudentNameKey(getStudentName(row))];
+      var percent = Math.max(asInt(byId), asInt(byName));
+      return Object.assign({}, row, { __attendancePercent: percent });
+  }
+
   async function loadPixelsForSelected() {
     var g = selectedGroup();
     if (!g) {
@@ -477,9 +594,13 @@ module.exports = function renderPixelsView(container) {
     loading = true;
     renderTable();
     try {
-      var res = await apiRequest('GET', API.GROUPS.PIXELS_BY_GROUP(g.id));
-      var list = unwrapResponse(res);
+      var pair = await Promise.all([
+        apiRequest('GET', API.GROUPS.PIXELS_BY_GROUP(g.id)),
+        loadAttendancePercentIndex()
+      ]);
+      var list = unwrapResponse(pair[0]);
       rows = Array.isArray(list) ? list : [];
+      applyAttendancePercentsToRows();
       setMsg('');
     } catch (err) {
       rows = [];
@@ -491,15 +612,17 @@ module.exports = function renderPixelsView(container) {
   }
 
   function rowToExport(groupName, row) {
+    var attendancePercent = getAttendancePercent(row);
     var out = {
       group: groupName || '—',
       studentId: getStudentId(row),
       studentName: getStudentName(row),
-      attendance: getAttendancePoints(row),
+      attendancePercent: attendancePercent,
+      attendance: attendancePercentToPoints(attendancePercent),
       total: computeTotal(row)
     };
     EDITABLE_PIXEL_KEYS.forEach(function (key) {
-      out[key] = asInt(row && row[key]);
+      out[key] = getEditablePixelValue(row, key);
     });
     return out;
   }
@@ -519,6 +642,10 @@ module.exports = function renderPixelsView(container) {
     if (includeGroup) values.push(item.group);
     values.push(item.studentName);
     CRITERIA_COLUMNS.forEach(function (c) {
+      if (c.key === '__attendance_percent__') {
+        values.push(String(item.attendancePercent) + '%');
+        return;
+      }
       if (c.key === '__attendance__') {
         values.push(item.attendance);
         return;
@@ -565,6 +692,7 @@ module.exports = function renderPixelsView(container) {
       setMsg('Список групп пуст.', 'err');
       return;
     }
+    await loadAttendancePercentIndex();
     var bestByStudent = {};
     for (var i = 0; i < groups.length; i++) {
       var g = groups[i];
@@ -577,7 +705,7 @@ module.exports = function renderPixelsView(container) {
       }
       list = Array.isArray(list) ? list : [];
       for (var j = 0; j < list.length; j++) {
-        var item = rowToExport(g.name || '—', list[j]);
+        var item = rowToExport(g.name || '—', withAttendancePercent(list[j]));
         var key = item.studentId != null ? ('id:' + String(item.studentId)) : ('name:' + item.studentName.toLowerCase());
         var existing = bestByStudent[key];
         if (!existing || item.total > existing.total) {

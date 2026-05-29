@@ -21,6 +21,14 @@ function employeeDisplayName(data, opts) {
   return s || data.login || '—';
 }
 
+function resetBusyOverlay() {
+  try {
+    require('./busy-overlay.js').resetBusy();
+  } catch (_) {
+    // Saving can be used on pages that do not load the global busy overlay.
+  }
+}
+
 async function saveExcel(buffer, defaultName) {
   const fs = require('fs');
   const path = require('path');
@@ -29,13 +37,18 @@ async function saveExcel(buffer, defaultName) {
   const defaultPath = fs.existsSync(downloadsDir)
     ? path.join(downloadsDir, defaultName)
     : path.join(os.homedir(), defaultName);
+  resetBusyOverlay();
   const dlg = await ipcRenderer.invoke('save-excel-dialog', { defaultPath: defaultPath });
-  if (dlg.canceled || !dlg.filePath) return;
-  fs.writeFileSync(dlg.filePath, Buffer.from(buffer));
+  if (!dlg || dlg.canceled || !dlg.filePath) {
+    resetBusyOverlay();
+    return false;
+  }
+  await fs.promises.writeFile(dlg.filePath, Buffer.from(buffer));
   const openErr = await shell.openPath(dlg.filePath);
   if (openErr) {
     window.alert('Файл сохранён, но не удалось открыть:\n' + openErr);
   }
+  return true;
 }
 
 function excelThinBorder() {

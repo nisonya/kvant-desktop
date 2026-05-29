@@ -118,7 +118,9 @@ module.exports = function renderProfileView(container) {
       '</div>' +
       '<div class="profile-actions">' +
       '<button type="button" class="profile-edit-btn" id="profileEditBtn">Редактировать</button>' +
+      '<button type="button" class="profile-update-btn" id="profileUpdateBtn">Проверить обновления</button>' +
       '<button type="button" class="profile-logout-btn" id="profileLogoutBtn">Выйти из аккаунта</button>' +
+      '<span class="profile-save-msg" id="profileUpdateMsg"></span>' +
       '</div>' +
       kpiRow +
       '<section class="profile-section">' +
@@ -189,8 +191,10 @@ module.exports = function renderProfileView(container) {
     var editBtn = document.getElementById('profileEditBtn');
     var logoutBtn = document.getElementById('profileLogoutBtn');
     var kpiBtn = document.getElementById('profileKpiBtn');
+    var updateBtn = document.getElementById('profileUpdateBtn');
     if (editBtn) editBtn.addEventListener('click', enterEditMode);
     if (logoutBtn) logoutBtn.addEventListener('click', doLogout);
+    if (updateBtn) updateBtn.addEventListener('click', checkForUpdates);
     if (kpiBtn) {
       kpiBtn.addEventListener('click', function () {
         var u = normalizeExternalUrl(kpiLinkFromProfile(profileData));
@@ -203,6 +207,30 @@ module.exports = function renderProfileView(container) {
           });
         }
       });
+    }
+  }
+
+  async function checkForUpdates() {
+    var btn = document.getElementById('profileUpdateBtn');
+    var msgEl = document.getElementById('profileUpdateMsg');
+    if (btn) btn.disabled = true;
+    if (msgEl) {
+      msgEl.textContent = 'Проверяем обновления...';
+      msgEl.className = 'profile-save-msg';
+    }
+    try {
+      var result = await ipcRenderer.invoke('check-for-updates-manual');
+      if (msgEl) {
+        msgEl.textContent = (result && result.message) || 'Проверка обновлений запущена.';
+        msgEl.className = 'profile-save-msg' + (result && result.ok ? ' profile-save-msg--ok' : ' profile-save-msg--err');
+      }
+    } catch (err) {
+      if (msgEl) {
+        msgEl.textContent = (err && err.message) || 'Не удалось проверить обновления.';
+        msgEl.className = 'profile-save-msg profile-save-msg--err';
+      }
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 

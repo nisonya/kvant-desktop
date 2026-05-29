@@ -1,9 +1,12 @@
 'use strict';
 
+const { ipcRenderer } = require('electron');
 const { apiRequest, unwrapResponse } = require('./api-client.js');
 const API = require('./api-paths.js');
 const { escapeHtml, escapeHtmlAttr } = require('./html-escape.js');
+const { wireRentRoomsModal } = require('./rent-rooms-modal.js');
 
+const ADMIN_ACCESS_LEVELS = [1, 4, 6];
 const WEEKDAY_NAMES = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 const CALENDAR_MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const CALENDAR_WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -47,6 +50,38 @@ function timeShort(t) {
   return String(parseInt(m[1], 10)).padStart(2, '0') + ':' + m[2];
 }
 
+function rentNormalizeTimeApi(t) {
+  if (!t || !String(t).trim()) return '';
+  var s = String(t).trim();
+  if (/^\d{2}:\d{2}$/.test(s)) return s + ':00';
+  return s;
+}
+
+function hasRentEditAccess(user) {
+  var level = user && (user.accessLevel != null ? user.accessLevel : user.access_level_id);
+  var n = Number(level);
+  return !isNaN(n) && ADMIN_ACCESS_LEVELS.indexOf(n) >= 0;
+}
+
+async function resolveRentEditAccess(user) {
+  var level = null;
+  var empId = user && (user.employee_id != null ? user.employee_id
+    : (user.id_employees != null ? user.id_employees : user.id));
+  if (empId != null) {
+    try {
+      var res = await apiRequest('GET', API.REFERENCE.ACCESS_BY_ID(empId));
+      var d = unwrapResponse(res);
+      level = d && d.access_level_id;
+    } catch (_) {
+      // fallback to stored user fields
+    }
+  }
+  if (level == null && user) {
+    level = user.accessLevel != null ? user.accessLevel : user.access_level_id;
+  }
+  return hasRentEditAccess({ accessLevel: level });
+}
+
 function parseIsoDate(iso) {
   var s = String(iso || '').trim();
   var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -62,13 +97,13 @@ function toIso(y, month1, day) {
   return String(y) + '-' + String(month1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
 }
 
-function daysInMonth(year, month1) {
-  return new Date(year, month1, 0).getDate();
-}
-
 function shiftMonth(y, m, delta) {
   var dt = new Date(y, m - 1 + delta, 1);
   return { y: dt.getFullYear(), m: dt.getMonth() + 1 };
+}
+
+function daysInMonth(y, m) {
+  return new Date(y, m, 0).getDate();
 }
 
 function calendarGridStart(y, m) {
@@ -76,6 +111,10 @@ function calendarGridStart(y, m) {
   var day = first.getDay();
   var mondayIndex = day === 0 ? 6 : day - 1;
   return new Date(y, m - 1, 1 - mondayIndex);
+}
+
+function rentIdFromRow(row) {
+  return pick(row, ['id_rent', 'id']);
 }
 
 module.exports = function renderRentView(container) {
@@ -87,6 +126,7 @@ module.exports = function renderRentView(container) {
   var rentRows = [];
   var lessonRows = [];
   var loading = false;
+  var canEdit = false;
   var calendarYear = parseIsoDate(selectedDate).y;
   var calendarMonth = parseIsoDate(selectedDate).m;
 
@@ -104,6 +144,116 @@ module.exports = function renderRentView(container) {
   function eventTitleFromRent(row) {
     var t = pick(row, ['event_name', 'name_event', 'name']);
     return String(t || '').trim() || 'Мероприятие';
+  }
+
+  function buildRentRowViewHtml(row) {
+    var rid = rentIdFromRow(row);
+    var eventId = eventIdFromRent(row);
+    var st = timeShort(pick(row, ['start_time', 'startTime']));
+    var en = timeShort(pick(row, ['end_time', 'endTime']));
+    var timeLine = st && en ? (st + ' - ' + en) : (st || en || 'Время не указано');
+    var actions = canEdit
+      ? '<div class="rent-card__actions">' +
+        '<button type="button" class="event-rent-btn event-rent-btn--edit">Изменить</button>' +
+        '<button type="button" class="event-rent-btn event-rent-btn--del">Удалить</button>' +
+        '</div>'
+      : '';
+    return '<article class="rent-card rent-card--event rent-card--view"' +
+      (eventId ? (' data-event-id="' + escapeHtmlAttr(String(eventId)) + '"') : '') +
+      ' data-rent-id="' + escapeHtmlAttr(String(rid || '')) + '"' +
+      ' data-room-id="' + escapeHtmlAttr(String(pick(row, ['id_room', 'room_id']) || selectedRoomId || '')) + '"' +
+      ' data-date="' + escapeHtmlAttr(String(pick(row, ['date']) || selectedDate || '')) + '"' +
+      ' data-start="' + escapeHtmlAttr(st) + '"' +
+      ' data-end="' + escapeHtmlAttr(en) + '">' +
+      '<h3 class="rent-card__title">' + escapeHtml(eventTitleFromRent(row)) + '</h3>' +
+      '<p class="rent-card__meta">Мероприятие: ' + escapeHtml(eventId ? String(eventId) : '—') + '</p>' +
+      '<p class="rent-card__meta">Начало: ' + escapeHtml(st || '—') + '</p>' +
+      '<p class="rent-card__meta">Конец: ' + escapeHtml(en || '—') + '</p>' +
+      '<p class="rent-card__hint">' + escapeHtml(timeLine) + '</p>' +
+      actions +
+      '</article>';
+  }
+
+  function buildRentRowEditHtml(state) {
+    var rid = state && state.id != null ? String(state.id) : '';
+    var roomOptions = rooms.map(function (r) {
+      var picked = String(r.value) === String(state.room_id || '') ? ' selected' : '';
+      return '<option value="' + escapeHtmlAttr(String(r.value)) + '"' + picked + '>' + escapeHtml(String(r.label)) + '</option>';
+    }).join('');
+    return '<article class="rent-card rent-card--event rent-card--edit" data-rent-id="' + escapeHtmlAttr(rid) + '">' +
+      '<div class="event-rent-row__edit-grid rent-edit-grid">' +
+      '<label class="event-rent-lbl"><span class="event-rent-lbl__t">ID мероприятия</span>' +
+      '<input type="number" min="1" class="event-edit-input rent-edit-event" value="' + escapeHtmlAttr(state.event_id || '') + '"></label>' +
+      '<label class="event-rent-lbl"><span class="event-rent-lbl__t">Кабинет</span>' +
+      '<select class="event-edit-input rent-edit-room"><option value="">— Кабинет —</option>' + roomOptions + '</select></label>' +
+      '<label class="event-rent-lbl"><span class="event-rent-lbl__t">Дата</span>' +
+      '<input type="date" class="event-edit-input rent-edit-date" value="' + escapeHtmlAttr(state.date || '') + '"></label>' +
+      '<label class="event-rent-lbl"><span class="event-rent-lbl__t">Начало</span>' +
+      '<input type="time" class="event-edit-input rent-edit-start" value="' + escapeHtmlAttr(state.start_time || '') + '"></label>' +
+      '<label class="event-rent-lbl"><span class="event-rent-lbl__t">Конец</span>' +
+      '<input type="time" class="event-edit-input rent-edit-end" value="' + escapeHtmlAttr(state.end_time || '') + '"></label>' +
+      '</div>' +
+      '<div class="event-rent-row__edit-actions">' +
+      '<button type="button" class="event-rent-btn event-rent-btn--save">Сохранить</button>' +
+      (rid ? '<button type="button" class="event-rent-btn event-rent-btn--cancel">Отмена</button>' : '') +
+      (rid ? '<button type="button" class="event-rent-btn event-rent-btn--del">Удалить</button>' : '') +
+      '</div></article>';
+  }
+
+  function defaultRentEditState() {
+    return {
+      id: '',
+      event_id: '',
+      room_id: selectedRoomId || '',
+      date: selectedDate || '',
+      start_time: '',
+      end_time: ''
+    };
+  }
+
+  function readRentEditStateFromEl(rowEl) {
+    var eventInp = rowEl.querySelector('.rent-edit-event');
+    var roomSel = rowEl.querySelector('.rent-edit-room');
+    var dateInp = rowEl.querySelector('.rent-edit-date');
+    var startInp = rowEl.querySelector('.rent-edit-start');
+    var endInp = rowEl.querySelector('.rent-edit-end');
+    return {
+      id: rowEl.getAttribute('data-rent-id') || '',
+      event_id: eventInp ? String(eventInp.value || '').trim() : '',
+      room_id: roomSel ? String(roomSel.value || '').trim() : '',
+      date: dateInp ? String(dateInp.value || '').trim() : '',
+      start_time: rentNormalizeTimeApi(startInp ? startInp.value : ''),
+      end_time: rentNormalizeTimeApi(endInp ? endInp.value : '')
+    };
+  }
+
+  async function saveRentRow(state) {
+    var eventNum = parseInt(String(state.event_id || ''), 10);
+    var roomNum = parseInt(String(state.room_id || ''), 10);
+    if (isNaN(eventNum)) throw new Error('Укажите ID мероприятия.');
+    if (isNaN(roomNum)) throw new Error('Выберите кабинет.');
+    if (!state.date) throw new Error('Укажите дату брони.');
+    if (!state.start_time || !state.end_time) throw new Error('Укажите время начала и конца.');
+    if (!state.id) {
+      await apiRequest('POST', API.RENT.ROOT, {
+        event_id: eventNum,
+        room_id: roomNum,
+        date: state.date,
+        start_time: state.start_time,
+        end_time: state.end_time
+      });
+      return;
+    }
+    var rid = parseInt(String(state.id), 10);
+    if (isNaN(rid)) throw new Error('Некорректный id брони.');
+    await apiRequest('PUT', API.RENT.ROOT, {
+      id: rid,
+      event_id: eventNum,
+      room_id: roomNum,
+      date: state.date,
+      start_time: state.start_time,
+      end_time: state.end_time
+    });
   }
 
   function renderCards() {
@@ -125,18 +275,7 @@ module.exports = function renderRentView(container) {
     if (rentRows.length) {
       parts.push('<div class="rent-cards-section-title">Бронирования на дату</div>');
       rentRows.forEach(function (row) {
-        var eventId = eventIdFromRent(row);
-        var st = timeShort(pick(row, ['start_time', 'startTime']));
-        var en = timeShort(pick(row, ['end_time', 'endTime']));
-        var timeLine = st && en ? (st + ' - ' + en) : (st || en || 'Время не указано');
-        parts.push(
-          '<article class="rent-card rent-card--event"' + (eventId ? (' data-event-id="' + escapeHtmlAttr(String(eventId)) + '"') : '') + '>' +
-            '<h3 class="rent-card__title">' + escapeHtml(eventTitleFromRent(row)) + '</h3>' +
-            '<p class="rent-card__meta">Начало: ' + escapeHtml(st || '—') + '</p>' +
-            '<p class="rent-card__meta">Конец: ' + escapeHtml(en || '—') + '</p>' +
-            '<p class="rent-card__hint">' + escapeHtml(timeLine) + '</p>' +
-          '</article>'
-        );
+        parts.push(buildRentRowViewHtml(row));
       });
     }
 
@@ -160,14 +299,20 @@ module.exports = function renderRentView(container) {
     }
 
     if (!parts.length) {
-      wrap.innerHTML = '<div class="students-empty">Брони нет.</div>';
+      wrap.innerHTML = '<div class="students-empty">' + (canEdit ? 'Брони нет. Нажмите «Добавить бронь».' : 'Брони нет.') + '</div>';
       return;
     }
 
     wrap.innerHTML = parts.join('');
+    wireRentCardClicks();
+  }
 
-    wrap.querySelectorAll('.rent-card--event[data-event-id]').forEach(function (card) {
-      card.addEventListener('click', function () {
+  function wireRentCardClicks() {
+    var wrap = document.getElementById('rentCards');
+    if (!wrap) return;
+    wrap.querySelectorAll('.rent-card--view[data-event-id]').forEach(function (card) {
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('.event-rent-btn')) return;
         var id = card.getAttribute('data-event-id');
         if (!id) return;
         if (typeof window.__openEventById === 'function') {
@@ -179,16 +324,88 @@ module.exports = function renderRentView(container) {
     });
   }
 
+  function wireRentActions() {
+    var addBtn = document.getElementById('rentAddBtn');
+    var wrap = document.getElementById('rentCards');
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        if (!selectedRoomId || !selectedDate) {
+          setMsg('Сначала выберите кабинет и дату.', 'err');
+          return;
+        }
+        if (!wrap) return;
+        setMsg('');
+        var empty = wrap.querySelector('.students-empty');
+        if (empty) empty.remove();
+        var sectionTitle = wrap.querySelector('.rent-cards-section-title');
+        if (!sectionTitle) {
+          wrap.insertAdjacentHTML('afterbegin', '<div class="rent-cards-section-title">Бронирования на дату</div>');
+        }
+        wrap.insertAdjacentHTML('beforeend', buildRentRowEditHtml(defaultRentEditState()));
+      });
+    }
+    if (!wrap) return;
+    wrap.addEventListener('click', async function (e) {
+      var btn = e.target.closest('.event-rent-btn');
+      if (!btn || !wrap.contains(btn)) return;
+      var row = btn.closest('.rent-card--event');
+      if (!row) return;
+      e.stopPropagation();
+
+      if (btn.classList.contains('event-rent-btn--edit')) {
+        if (!row.classList.contains('rent-card--view')) return;
+        var viewState = {
+          id: row.getAttribute('data-rent-id') || '',
+          event_id: row.getAttribute('data-event-id') || '',
+          room_id: row.getAttribute('data-room-id') || selectedRoomId,
+          date: row.getAttribute('data-date') || selectedDate,
+          start_time: row.getAttribute('data-start') || '',
+          end_time: row.getAttribute('data-end') || ''
+        };
+        row.outerHTML = buildRentRowEditHtml(viewState);
+        return;
+      }
+
+      if (btn.classList.contains('event-rent-btn--cancel')) {
+        setMsg('');
+        await loadData();
+        return;
+      }
+
+      if (btn.classList.contains('event-rent-btn--del')) {
+        var ridDel = row.getAttribute('data-rent-id');
+        if (!ridDel) {
+          row.remove();
+          if (!wrap.querySelector('.rent-card')) renderCards();
+          return;
+        }
+        if (!window.confirm('Удалить эту бронь?')) return;
+        setMsg('');
+        try {
+          await apiRequest('DELETE', API.RENT.BY_ID(ridDel));
+          await loadData();
+        } catch (err) {
+          setMsg((err && err.message) || 'Не удалось удалить бронь.', 'err');
+        }
+        return;
+      }
+
+      if (btn.classList.contains('event-rent-btn--save')) {
+        var state = readRentEditStateFromEl(row);
+        setMsg('');
+        try {
+          await saveRentRow(state);
+          await loadData();
+        } catch (err) {
+          setMsg((err && err.message) || 'Не удалось сохранить бронь.', 'err');
+        }
+      }
+    });
+  }
+
   function renderCalendar() {
     var root = document.getElementById('rentCalendar');
     if (!root) return;
-    var cur = parseIsoDate(selectedDate);
-    if (cur && (cur.y !== calendarYear || cur.m !== calendarMonth)) {
-      calendarYear = cur.y;
-      calendarMonth = cur.m;
-    }
-    var prev = shiftMonth(calendarYear, calendarMonth, -1);
-    var next = shiftMonth(calendarYear, calendarMonth, 1);
     var gridStart = calendarGridStart(calendarYear, calendarMonth);
     var cellHtml = '';
     var nowIso = todayIso();
@@ -214,18 +431,31 @@ module.exports = function renderRentView(container) {
       '<div class="rent-cal__grid">' + cellHtml + '</div>'
     ].join('');
 
-    root.querySelectorAll('.rent-cal__nav').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var nav = btn.getAttribute('data-nav');
-        var shifted = shiftMonth(calendarYear, calendarMonth, nav === 'prev' ? -1 : 1);
-        calendarYear = shifted.y;
-        calendarMonth = shifted.m;
-        renderCalendar();
-      });
-    });
-    root.querySelectorAll('.rent-cal__day').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var iso = btn.getAttribute('data-date') || '';
+    if (!root.dataset.rentCalendarWired) {
+      root.dataset.rentCalendarWired = '1';
+      root.addEventListener('click', function (e) {
+        var navBtn = e.target.closest('.rent-cal__nav');
+        if (navBtn && root.contains(navBtn)) {
+          e.preventDefault();
+          e.stopPropagation();
+          var nav = navBtn.getAttribute('data-nav');
+          var shifted = shiftMonth(calendarYear, calendarMonth, nav === 'prev' ? -1 : 1);
+          var parsedSelected = parseIsoDate(selectedDate);
+          var selectedDay = parsedSelected ? parsedSelected.d : 1;
+          calendarYear = shifted.y;
+          calendarMonth = shifted.m;
+          selectedDate = toIso(calendarYear, calendarMonth, Math.min(selectedDay, daysInMonth(calendarYear, calendarMonth)));
+          renderCalendar();
+          loadData().catch(function (err) {
+            setMsg((err && err.message) || 'Не удалось загрузить данные.', 'err');
+          });
+          return;
+        }
+
+        var dayBtn = e.target.closest('.rent-cal__day');
+        if (!dayBtn || !root.contains(dayBtn)) return;
+        e.preventDefault();
+        var iso = dayBtn.getAttribute('data-date') || '';
         if (!iso) return;
         selectedDate = iso;
         var p = parseIsoDate(selectedDate);
@@ -238,7 +468,7 @@ module.exports = function renderRentView(container) {
           setMsg((err && err.message) || 'Не удалось загрузить данные.', 'err');
         });
       });
-    });
+    }
   }
 
   async function loadData() {
@@ -283,6 +513,13 @@ module.exports = function renderRentView(container) {
   }
 
   function render() {
+    var actionBtnsHtml = '';
+    if (canEdit) {
+      actionBtnsHtml = [
+        '<button type="button" class="event-rent-btn" id="rentRoomsBtn">Изменить кабинеты</button>',
+        '<button type="button" class="event-rent-btn event-rent-btn--primary" id="rentAddBtn">Добавить бронь</button>'
+      ].join('');
+    }
     container.innerHTML = [
       '<div class="rent-view">',
       '  <div class="rent-layout">',
@@ -301,11 +538,15 @@ module.exports = function renderRentView(container) {
       '    </section>',
       '  </aside>',
       '  <section class="rent-main">',
-      '    <div class="rent-selected-date">Дата: ' + escapeHtml(selectedDate) + '</div>',
+      '    <div class="rent-main-head">',
+      '      <div class="rent-selected-date">Дата: ' + escapeHtml(selectedDate) + '</div>',
+      '      <div class="rent-main-actions">' + actionBtnsHtml + '</div>',
+      '    </div>',
       '    <div class="students-msg" id="rentMsg"></div>',
       '    <div class="rent-cards" id="rentCards"></div>',
       '  </section>',
       '  </div>',
+      buildRoomsModalHtml(),
       '</div>'
     ].join('');
 
@@ -321,6 +562,15 @@ module.exports = function renderRentView(container) {
 
     renderCalendar();
     renderCards();
+    wireRentActions();
+    if (canEdit) {
+      wireRentRoomsModal({
+        apiRequest: apiRequest,
+        escapeHtml: escapeHtml,
+        escapeHtmlAttr: escapeHtmlAttr,
+        onAfterRoomsMutation: refreshAfterRoomsMutation
+      });
+    }
   }
 
   async function loadRooms() {
@@ -338,11 +588,53 @@ module.exports = function renderRentView(container) {
     }).filter(function (x) { return x.value != null; });
     rooms.sort(function (a, b) { return a.label.localeCompare(b.label, 'ru'); });
     if (!selectedRoomId && rooms.length) selectedRoomId = String(rooms[0].value);
+    else if (selectedRoomId && !rooms.some(function (r) { return String(r.value) === String(selectedRoomId); })) {
+      selectedRoomId = rooms.length ? String(rooms[0].value) : '';
+    }
+  }
+
+  function buildRoomsModalHtml() {
+    if (!canEdit) return '';
+    return [
+      '<div class="modal-overlay pos-modal" id="rentRoomsModal" hidden aria-hidden="true">',
+      '  <div class="modal-dialog pos-dialog" role="dialog" aria-modal="true" aria-labelledby="rentRoomsModalTitle" onclick="event.stopPropagation()">',
+      '    <div class="modal-header">',
+      '      <h2 class="modal-title" id="rentRoomsModalTitle">Управление кабинетами</h2>',
+      '      <button type="button" class="modal-close" id="rentRoomsClose" aria-label="Закрыть">&times;</button>',
+      '    </div>',
+      '    <div class="modal-body pos-body">',
+      '      <div class="pos-create-row">',
+      '        <input type="text" class="pos-create-input" id="rentRoomsNewName" placeholder="Новый кабинет..." maxlength="150">',
+      '        <button type="button" class="pos-create-btn" id="rentRoomsCreateBtn">Добавить</button>',
+      '      </div>',
+      '      <div class="pos-list" id="rentRoomsList"><div class="events-loading">Загрузка...</div></div>',
+      '      <div class="pos-msg" id="rentRoomsMsg"></div>',
+      '    </div>',
+      '  </div>',
+      '</div>'
+    ].join('');
+  }
+
+  function updateRoomSelect() {
+    var roomSelect = document.getElementById('rentRoomSelect');
+    if (!roomSelect) return;
+    roomSelect.innerHTML = ['<option value="">Выберите кабинет</option>'].concat(rooms.map(function (r) {
+      var selected = String(selectedRoomId) === String(r.value) ? ' selected' : '';
+      return '<option value="' + escapeHtmlAttr(String(r.value)) + '"' + selected + '>' + escapeHtml(String(r.label)) + '</option>';
+    })).join('');
+  }
+
+  async function refreshAfterRoomsMutation() {
+    await loadRooms();
+    updateRoomSelect();
+    await loadData();
   }
 
   (async function init() {
     container.innerHTML = '<div class="rent-view"><div class="events-loading">Загрузка брони...</div></div>';
     try {
+      var user = await ipcRenderer.invoke('get-user');
+      canEdit = await resolveRentEditAccess(user);
       await loadRooms();
       render();
       await loadData();

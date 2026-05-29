@@ -1,6 +1,6 @@
 {
   "name": "kvant.desktop",
-  "version": "1.0.0",
+  "version": "2.1.1",
   "description": "Electron-приложение для работы с API. Поддерживает Windows и macOS.",
   "license": "MIT",
   "author": "",
@@ -16,7 +16,30 @@
   "build": {
     "appId": "ru.kvantorium.desktop",
     "productName": "Кванториум",
+    "artifactName": "${name}-setup-${version}.${ext}",
     "icon": "build/icon.ico",
+    "files": [
+      "main.js",
+      "package.json",
+      "package-lock.json",
+      "renderer/**/*",
+      "files/**/*",
+      "fonts/**/*",
+      "scripts/**/*",
+      "build/**/*",
+      "!dist",
+      "!dist/**/*",
+      "!dist-*",
+      "!dist-*/**/*",
+      "!coverage",
+      "!coverage/**/*",
+      "!tests",
+      "!tests/**/*",
+      "!playwright-report",
+      "!playwright-report/**/*",
+      "!test-results",
+      "!test-results/**/*"
+    ],
     "win": {
       "icon": "build/icon.ico"
     }

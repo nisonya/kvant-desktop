@@ -386,6 +386,7 @@ module.exports = function renderEventsView(container, type) {
     detailPanel.setAttribute('aria-hidden', 'true');
     detailPanel.innerHTML = '';
     listPanel.style.display = '';
+    if (typeof window.__setEventRemindersVisible === 'function') window.__setEventRemindersVisible(true);
     if (scrollEl) {
       requestAnimationFrame(function () {
         scrollEl.scrollTop = savedListScrollState.top;

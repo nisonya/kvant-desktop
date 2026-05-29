@@ -226,7 +226,7 @@ function wireEventDocumentsSection(eventId, createMode, basePath) {
   if (addBtn && fileInput) {
     addBtn.addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', async function () {
-      var files = fileInput.files;
+      var files = Array.prototype.slice.call(fileInput.files || []);
       fileInput.value = '';
       if (!files || !files.length) return;
       showDocMsg('');
@@ -235,20 +235,23 @@ function wireEventDocumentsSection(eventId, createMode, basePath) {
       setUploadBusy(true, total === 1
         ? 'Загрузка файла…'
         : 'Загрузка 1 из ' + total + '…');
-      for (var fi = 0; fi < total; fi++) {
-        if (total > 1) {
-          setUploadBusy(true, 'Загрузка ' + (fi + 1) + ' из ' + total + '…');
+      try {
+        for (var fi = 0; fi < total; fi++) {
+          if (total > 1) {
+            setUploadBusy(true, 'Загрузка ' + (fi + 1) + ' из ' + total + '…');
+          }
+          try {
+            var fd = new FormData();
+            fd.append('file', files[fi]);
+            await apiRequestMultipart(basePath + '/' + eventId + '/documents', fd);
+          } catch (err) {
+            console.error('[event-documents] upload', files[fi].name, err);
+            errors.push((files[fi].name || 'файл') + ': ' + formatDocumentOperationError(err, 'ошибка'));
+          }
         }
-        try {
-          var fd = new FormData();
-          fd.append('file', files[fi]);
-          await apiRequestMultipart(basePath + '/' + eventId + '/documents', fd);
-        } catch (err) {
-          console.error('[event-documents] upload', files[fi].name, err);
-          errors.push((files[fi].name || 'файл') + ': ' + formatDocumentOperationError(err, 'ошибка'));
-        }
+      } finally {
+        setUploadBusy(false);
       }
-      setUploadBusy(false);
       if (errors.length) {
         showDocMsg(errors.join('; '), true);
       }

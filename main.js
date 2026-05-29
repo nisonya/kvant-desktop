@@ -34,6 +34,7 @@ const TRAY_ICON_CANDIDATES = [
   path.join(__dirname, 'build', 'icon.png'),
   path.join(__dirname, 'build', 'icon.ico')
 ];
+const APP_USER_MODEL_ID = 'ru.kvantorium.desktop';
 
 function apiRequest(url, body) {
   return new Promise((resolve, reject) => {
@@ -133,6 +134,7 @@ function apiJsonRequest(method, url, token, body) {
 let store = null;
 let appTray = null;
 let mainWindowRef = null;
+let pendingEventNotificationOpen = null;
 let isQuitting = false;
 let autoUpdaterReady = false;
 let autoUpdateTimer = null;
@@ -182,6 +184,27 @@ function checkForUpdatesSafe() {
   autoUpdater.checkForUpdates().catch(function (err) {
     console.warn('[updater] check failed:', err.message || err);
   });
+}
+
+async function checkForUpdatesManual() {
+  if (!app.isPackaged) {
+    return { ok: false, message: 'Проверка обновлений доступна только в установленной версии приложения.' };
+  }
+  const configured = currentAutoUpdateFeedUrl
+    ? true
+    : configureAutoUpdaterFromServerUrl(getStore().get('serverUrl'));
+  if (!configured) {
+    return { ok: false, message: 'Не удалось определить адрес сервера обновлений.' };
+  }
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true, message: 'Проверка обновлений запущена.' };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err && err.message ? String(err.message) : 'Не удалось проверить обновления.'
+    };
+  }
 }
 
 function setupAutoUpdater() {
@@ -258,6 +281,23 @@ function asArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
+function emptyEventNotificationsData() {
+  return {
+    orgToday: [],
+    orgTomorrow: [],
+    partToday: [],
+    partTomorrow: []
+  };
+}
+
+function countEventNotifications(data) {
+  if (!data) return 0;
+  return asArray(data.orgToday).length
+    + asArray(data.orgTomorrow).length
+    + asArray(data.partToday).length
+    + asArray(data.partTomorrow).length;
+}
+
 function formatEventLine(ev) {
   const name = ev && ev.name ? String(ev.name) : 'Без названия';
   const form = ev && ev.form_of_holding ? String(ev.form_of_holding) : '';
@@ -266,6 +306,47 @@ function formatEventLine(ev) {
   if (form) parts.push('(' + form + ')');
   if (date) parts.push('до ' + date);
   return '• ' + parts.join(' ');
+}
+
+function eventIdFromNotificationItem(ev) {
+  if (!ev || typeof ev !== 'object') return '';
+  const raw = ev.id != null ? ev.id : (ev.id_event != null ? ev.id_event : ev.id_events);
+  return raw == null ? '' : String(raw);
+}
+
+function notificationEventName(ev) {
+  if (!ev || typeof ev !== 'object') return 'Без названия';
+  return String(ev.name || ev.title || ev.event_name || 'Без названия');
+}
+
+function notificationEventDate(ev) {
+  if (!ev || typeof ev !== 'object') return '';
+  return String(ev.dates_of_event || ev.registration_deadline || ev.date || '').trim();
+}
+
+function buildNotificationEntries(data) {
+  const sections = [
+    { type: 'org', when: 'Сегодня', label: 'Организация', rows: asArray(data && data.orgToday) },
+    { type: 'org', when: 'Завтра', label: 'Организация', rows: asArray(data && data.orgTomorrow) },
+    { type: 'part', when: 'Сегодня', label: 'Участие', rows: asArray(data && data.partToday) },
+    { type: 'part', when: 'Завтра', label: 'Участие', rows: asArray(data && data.partTomorrow) }
+  ];
+  const entries = [];
+  sections.forEach(function (section) {
+    section.rows.forEach(function (ev, idx) {
+      const id = eventIdFromNotificationItem(ev);
+      const name = notificationEventName(ev);
+      const date = notificationEventDate(ev);
+      entries.push({
+        id,
+        view: section.type,
+        key: section.type + ':' + (id || (name + ':' + idx)),
+        title: section.label + ': ' + name,
+        body: section.when + (date ? ' · ' + date : '')
+      });
+    });
+  });
+  return entries;
 }
 
 function dateSlotKey(now, slotHour) {
@@ -331,6 +412,37 @@ async function collectEventNotificationsData() {
   return { orgToday, orgTomorrow, partToday, partTomorrow };
 }
 
+async function getEventNotificationsResult() {
+  const checkedAt = new Date().toISOString();
+  try {
+    const data = await collectEventNotificationsData();
+    if (!data) {
+      return {
+        ok: false,
+        checkedAt,
+        error: 'Не удалось проверить напоминания: нет активной сессии или id сотрудника.',
+        data: emptyEventNotificationsData(),
+        total: 0
+      };
+    }
+    return {
+      ok: true,
+      checkedAt,
+      error: '',
+      data,
+      total: countEventNotifications(data)
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      checkedAt,
+      error: err && err.message ? String(err.message) : 'Не удалось загрузить напоминания.',
+      data: emptyEventNotificationsData(),
+      total: 0
+    };
+  }
+}
+
 function buildNotificationsBody(data) {
   if (!data) return '';
   const chunks = [];
@@ -364,6 +476,73 @@ function buildNotificationsBody(data) {
   return chunks.join('\n').trim();
 }
 
+function flushPendingEventNotificationOpen() {
+  const payload = pendingEventNotificationOpen;
+  const win = getWindow();
+  if (!payload || !win || win.isDestroyed()) return;
+  win.webContents.send('open-event-from-notification', payload);
+  pendingEventNotificationOpen = null;
+}
+
+function openEventFromNotification(entry) {
+  if (!entry || !entry.id) {
+    showMainWindow();
+    return;
+  }
+  pendingEventNotificationOpen = {
+    id: String(entry.id),
+    view: entry.view === 'part' ? 'part' : 'org'
+  };
+  const win = getWindow();
+  if (!win || win.isDestroyed()) {
+    createWindow(false).catch(function (err) {
+      console.error('[notifications] open window failed:', err);
+    });
+    return;
+  }
+  showMainWindow();
+  loadPage('main', win);
+}
+
+function showEventNotification(entry) {
+  if (!entry) return false;
+  const title = entry.title || 'Мероприятие';
+  const body = entry.body || '';
+  let desktopShown = false;
+
+  if (typeof Notification.isSupported !== 'function' || Notification.isSupported()) {
+    try {
+      const notification = new Notification({
+        title,
+        body,
+        silent: false
+      });
+      notification.on('click', function () {
+        openEventFromNotification(entry);
+      });
+      notification.on('failed', function (_event, error) {
+        console.warn('[notifications] desktop notification failed:', error || 'unknown error');
+      });
+      notification.show();
+      desktopShown = true;
+    } catch (err) {
+      console.warn('[notifications] desktop notification failed:', err && err.message ? err.message : err);
+    }
+  } else {
+    console.warn('[notifications] desktop notifications are not supported on this system');
+  }
+  return desktopShown;
+}
+
+function notifiedEventKeysForSlot(slot) {
+  const s = getStore();
+  const raw = s.get('notifiedEventReminderKeys');
+  if (!raw || typeof raw !== 'object' || raw.slot !== slot || !raw.keys || typeof raw.keys !== 'object') {
+    return { slot, keys: {} };
+  }
+  return raw;
+}
+
 async function runScheduledEventNotificationsIfNeeded() {
   const now = new Date();
   const slotHour = resolveCurrentNotificationSlotHour(now);
@@ -371,20 +550,33 @@ async function runScheduledEventNotificationsIfNeeded() {
 
   const s = getStore();
   const slot = dateSlotKey(now, slotHour);
-  if (s.get('lastEventsNotificationSlot') === slot) return;
 
   try {
-    const data = await collectEventNotificationsData();
-    if (!data) return;
-    const body = buildNotificationsBody(data);
-    // Отмечаем слот как обработанный, даже если уведомлять нечего — чтобы не крутить повторно каждую минуту.
-    s.set('lastEventsNotificationSlot', slot);
-    if (!body) return;
-    new Notification({
-      title: 'Мероприятия: сегодня и завтра',
-      body,
-      silent: false
-    }).show();
+    const result = await getEventNotificationsResult();
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('event-reminders-updated', result);
+    }
+    if (!result.ok) {
+      console.warn('[notifications] scheduled check failed:', result.error);
+      return;
+    }
+    const entries = buildNotificationEntries(result.data);
+    if (!entries.length) {
+      // Отмечаем пустой слот, чтобы не крутить повторно каждую минуту.
+      s.set('lastEventsNotificationSlot', slot);
+      return;
+    }
+    const alreadyShownSlot = s.get('lastEventsNotificationSlot') === slot;
+    const notified = notifiedEventKeysForSlot(slot);
+    let shownAny = false;
+    entries.forEach(function (entry) {
+      if (alreadyShownSlot && notified.keys[entry.key]) return;
+      if (showEventNotification(entry)) shownAny = true;
+      notified.keys[entry.key] = true;
+    });
+    s.set('notifiedEventReminderKeys', notified);
+    if (shownAny || !alreadyShownSlot) s.set('lastEventsNotificationSlot', slot);
   } catch (err) {
     console.warn('[notifications] scheduled check failed:', err.message || err);
   }
@@ -438,7 +630,12 @@ function showOrHideInitialWindow(win, startHidden) {
 
 function showMainWindow() {
   const win = getWindow();
-  if (!win) return;
+  if (!win) {
+    createWindow(false).catch(function (err) {
+      console.error('[window] create on show failed:', err);
+    });
+    return;
+  }
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
@@ -455,6 +652,17 @@ function resolveTrayIcon() {
   }
   const fallback = nativeImage.createFromPath(process.execPath);
   return fallback;
+}
+
+function resolveWindowIconPath() {
+  for (const iconPath of TRAY_ICON_CANDIDATES) {
+    try {
+      if (fs.existsSync(iconPath)) return iconPath;
+    } catch (_) {
+      // ignore unavailable icon path and try next
+    }
+  }
+  return undefined;
 }
 
 function createTray() {
@@ -560,21 +768,25 @@ async function createWindow(startHidden) {
   const hasStoredSession = hasUrl && (hasSavedCreds || hasAccessToken);
 
   const mainWindow = new BrowserWindow({
+    title: 'Кванториум',
     width: hasStoredSession ? 1200 : 440,
     height: hasStoredSession ? 800 : 520,
     minWidth: hasStoredSession ? 800 : 380,
     minHeight: hasStoredSession ? 600 : 480,
     show: false,
+    icon: resolveWindowIconPath(),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
   mainWindowRef = mainWindow;
+  mainWindow.webContents.on('did-finish-load', flushPendingEventNotificationOpen);
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    mainWindow.hide();
+    mainWindow.removeAllListeners('close');
+    mainWindow.close();
   });
   mainWindow.on('closed', () => {
     if (mainWindowRef === mainWindow) mainWindowRef = null;
@@ -651,18 +863,30 @@ ipcMain.handle('consume-login-notice', () => {
 ipcMain.handle('get-access-token', () => getStore().get('accessToken') || '');
 
 ipcMain.handle('save-excel-dialog', async (event, options) => {
-  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  const win = windowFromIpc(event.sender);
   const opts = options && typeof options === 'object' ? options : {};
   const defaultPath = opts.defaultPath || 'meropriyatiya.xlsx';
-  const result = await dialog.showSaveDialog(win, {
-    title: 'Сохранить Excel',
-    defaultPath,
-    filters: [{ name: 'Книга Excel', extensions: ['xlsx'] }]
-  });
-  return result;
+  try {
+    const result = await dialog.showSaveDialog(win || undefined, {
+      title: 'Сохранить Excel',
+      defaultPath,
+      filters: [{ name: 'Книга Excel', extensions: ['xlsx'] }]
+    });
+    if (!result || result.canceled || !result.filePath) {
+      return { canceled: true, filePath: '' };
+    }
+    return result;
+  } catch (err) {
+    console.warn('[save-excel-dialog] failed:', err && err.message ? err.message : err);
+    return { canceled: true, filePath: '', error: err && err.message ? err.message : 'Ошибка выбора файла' };
+  }
 });
 
 ipcMain.handle('get-user', () => getStore().get('user') || null);
+
+ipcMain.handle('get-event-reminders', async () => getEventNotificationsResult());
+
+ipcMain.handle('check-for-updates-manual', async () => checkForUpdatesManual());
 
 ipcMain.handle('refresh-access-token', async () => {
   const result = await tryAutoLogin();
@@ -804,21 +1028,32 @@ ipcMain.handle('auth-login', async (_event, body) => {
 
 // --- App lifecycle ---
 
-app.whenReady().then(async () => {
-  app.setName('Кванториум');
-  createTray();
-  if (process.platform === 'win32') {
-    app.setLoginItemSettings({
-      openAtLogin: true,
-      path: process.execPath,
-      args: ['--hidden']
-    });
-  }
-  const startHidden = process.argv.includes('--hidden');
-  await createWindow(startHidden);
-  startEventNotificationsScheduler();
-  setupAutoUpdater();
-});
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+    app.setName('Кванториум');
+    if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+    Menu.setApplicationMenu(null);
+    createTray();
+    if (process.platform === 'win32') {
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        path: process.execPath,
+        args: ['--hidden']
+      });
+    }
+    const startHidden = process.argv.includes('--hidden');
+    startEventNotificationsScheduler();
+    setupAutoUpdater();
+    if (!startHidden) {
+      await createWindow(false);
+    }
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return;
@@ -835,12 +1070,17 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  if (eventNotifyTimer) {
+    clearInterval(eventNotifyTimer);
+    eventNotifyTimer = null;
+  }
+  if (autoUpdateTimer) {
+    clearInterval(autoUpdateTimer);
+    autoUpdateTimer = null;
+  }
 });
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
-if (!gotSingleInstanceLock) {
-  app.quit();
-} else {
+if (gotSingleInstanceLock) {
   app.on('second-instance', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow(false).catch(function (err) {

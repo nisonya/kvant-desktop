@@ -45,6 +45,7 @@ module.exports = function renderAttendanceView(container) {
   var editStudents = [];
   var editMessage = '';
   var message = '';
+  var editLoadSeq = 0;
 
   function todayIsoDate() {
     return new Date().toISOString().slice(0, 10);
@@ -61,9 +62,13 @@ module.exports = function renderAttendanceView(container) {
 
   function studentNameOf(row) {
     if (!row || typeof row !== 'object') return '—';
-    var direct = row.name || row.full_name || row.fio;
+    var direct = row.full_name || row.fio;
     if (direct && String(direct).trim()) return String(direct).trim();
-    var parts = [row.surnameStudent || row.surname, row.nameStudent || row.first_name || row.name, row.patronymic]
+    var parts = [
+      row.surnameStudent || row.surname || row.second_name || row.last_name,
+      row.nameStudent || row.first_name || row.name,
+      row.patronymic
+    ]
       .map(function (v) { return v == null ? '' : String(v).trim(); })
       .filter(Boolean);
     return parts.length ? parts.join(' ') : '—';
@@ -119,13 +124,17 @@ module.exports = function renderAttendanceView(container) {
       return;
     }
     var head = '<th class="attendance-table__name-col">Фамилия Имя ученика</th>' +
-      pivot.dates.map(function (d) { return '<th>' + escapeHtml(d) + '</th>'; }).join('');
+      pivot.dates.map(function (d) { return '<th>' + escapeHtml(d) + '</th>'; }).join('') +
+      '<th>Посещаемость</th>';
     var body = pivot.students.map(function (s) {
+      var presentCount = 0;
       var cells = pivot.dates.map(function (d) {
         var value = s.byDate[d] || '—';
+        if (value === '✓') presentCount += 1;
         return '<td>' + escapeHtml(value) + '</td>';
       }).join('');
-      return '<tr><td class="attendance-table__name-col">' + escapeHtml(s.name) + '</td>' + cells + '</tr>';
+      var percent = pivot.dates.length ? Math.round((presentCount / pivot.dates.length) * 100) : 0;
+      return '<tr><td class="attendance-table__name-col">' + escapeHtml(s.name) + '</td>' + cells + '<td>' + percent + '%</td></tr>';
     }).join('');
     wrap.innerHTML =
       '<div class="attendance-table-scroll">' +
@@ -198,12 +207,15 @@ module.exports = function renderAttendanceView(container) {
   }
 
   async function loadEditAttendanceData() {
+    var seq = ++editLoadSeq;
     if (!editGroupId || !editDate) {
       editStudents = [];
+      renderEditModal();
       return;
     }
     editLoading = true;
     editMessage = '';
+    editStudents = [];
     renderEditModal();
     try {
       var studentsRes = await apiRequest('GET', API.STUDENTS.FULL_BY_GROUP(editGroupId));
@@ -225,6 +237,7 @@ module.exports = function renderAttendanceView(container) {
         if (sid == null) return;
         presenceById[String(sid)] = Number(row && row.presence) === 1;
       });
+      if (seq !== editLoadSeq) return;
       editStudents = studentsList.map(function (s) {
         return {
           id: s.id,
@@ -233,9 +246,19 @@ module.exports = function renderAttendanceView(container) {
         };
       });
     } finally {
+      if (seq === editLoadSeq) {
+        editLoading = false;
+        renderEditModal();
+      }
+    }
+  }
+
+  function reloadEditAttendanceData() {
+    loadEditAttendanceData().catch(function (err) {
+      editMessage = (err && err.message) || 'Не удалось загрузить посещаемость на выбранную дату.';
       editLoading = false;
       renderEditModal();
-    }
+    });
   }
 
   function renderEditModal() {
@@ -271,7 +294,6 @@ module.exports = function renderAttendanceView(container) {
       '<div class="attendance-edit-controls">' +
       '<label class="attendance-edit-control"><span class="attendance-edit-label">Группа</span><select id="attendanceEditGroupSelect" class="groups-edit-input"' + (editSaving ? ' disabled' : '') + '>' + groupOptions + '</select></label>' +
       '<label class="attendance-edit-control"><span class="attendance-edit-label">Дата</span><input type="date" id="attendanceEditDate" class="groups-edit-input" value="' + escapeHtmlAttr(editDate || '') + '"' + (editSaving ? ' disabled' : '') + '></label>' +
-      '<button type="button" class="groups-edit-save" id="attendanceEditLoadBtn"' + (editSaving ? ' disabled' : '') + '>Загрузить</button>' +
       '</div>' +
       '<div class="students-msg' + (editMessage ? ' students-msg--err' : '') + '" id="attendanceEditMsg">' + escapeHtml(editMessage || '') + '</div>' +
       studentsHtml +
@@ -292,22 +314,14 @@ module.exports = function renderAttendanceView(container) {
     if (groupSelect) {
       groupSelect.addEventListener('change', function () {
         editGroupId = groupSelect.value;
+        reloadEditAttendanceData();
       });
     }
     var dateInput = document.getElementById('attendanceEditDate');
     if (dateInput) {
       dateInput.addEventListener('change', function () {
         editDate = dateInput.value;
-      });
-    }
-    var loadBtn = document.getElementById('attendanceEditLoadBtn');
-    if (loadBtn) {
-      loadBtn.addEventListener('click', function () {
-        loadEditAttendanceData().catch(function (err) {
-          editMessage = (err && err.message) || 'Не удалось загрузить посещаемость на выбранную дату.';
-          editLoading = false;
-          renderEditModal();
-        });
+        reloadEditAttendanceData();
       });
     }
     body.querySelectorAll('.attendance-edit-check').forEach(function (cb) {
@@ -353,6 +367,7 @@ module.exports = function renderAttendanceView(container) {
           }
           selectedGroupId = String(editGroupId);
           editOpen = false;
+          editSaving = false;
           render();
           await loadAttendanceForSelected();
           setMessage('Посещаемость сохранена.', 'ok');
@@ -421,13 +436,10 @@ module.exports = function renderAttendanceView(container) {
         editOpen = true;
         editGroupId = selectedGroupId || (groups[0] ? String(groups[0].id) : '');
         editDate = editDate || todayIsoDate();
+        editSaving = false;
         editMessage = '';
         renderEditModal();
-        loadEditAttendanceData().catch(function (err) {
-          editMessage = (err && err.message) || 'Не удалось загрузить посещаемость на выбранную дату.';
-          editLoading = false;
-          renderEditModal();
-        });
+        reloadEditAttendanceData();
       });
     }
     var editModal = document.getElementById('attendanceEditModal');

@@ -43,7 +43,8 @@ module.exports = {
     GROUPS: '/api/schedule/groups',
     BY_TEACHER: function (id) { return '/api/schedule/by-teacher/' + id; },
     BY_GROUP: function (id) { return '/api/schedule/by-group/' + id; },
-    BY_ROOM: function (id) { return '/api/schedule/by-room/' + id; }
+    BY_ROOM: function (id) { return '/api/schedule/by-room/' + id; },
+    BY_ID: function (id) { return '/api/schedule/' + id; }
   },
   ATTENDANCE: {
     BY_GROUP: function (id) { return '/api/attendance/by-group/' + id; },
@@ -57,6 +58,7 @@ module.exports = {
     ACCESS: '/api/reference/access',
     ACCESS_BY_ID: function (id) { return '/api/reference/access/' + id; },
     ROOMS: '/api/reference/rooms',
+    ROOM_BY_ID: function (id) { return '/api/reference/rooms/' + id; },
     DOCS: '/api/reference/docs',
     DOC_BY_ID: function (id) { return '/api/reference/docs/' + id; },
     LEVELS_TRY: [

@@ -41,6 +41,7 @@ if (!createMode && (eventId == null || eventId === '')) return;
 if (!detailPanel || !listPanel || !scrollEl) return;
 exitCtx.clear();
 savedListScrollState.top = scrollEl.scrollTop;
+if (typeof window.__setEventRemindersVisible === 'function') window.__setEventRemindersVisible(false);
 listPanel.style.display = 'none';
 detailPanel.style.display = 'flex';
 detailPanel.setAttribute('aria-hidden', 'false');
@@ -475,6 +476,42 @@ try {
     openUnsavedModal();
   }
 
+  async function deleteEventDetail() {
+    if (createMode || eventId == null || eventId === '') return;
+    if (!window.confirm('Удалить это мероприятие? Это действие нельзя отменить.')) return;
+    var msgEl = document.getElementById('eventSaveMsg');
+    var saveBtn = document.getElementById('eventDetailSave');
+    var deleteBtn = document.getElementById('eventDetailDelete');
+    if (saveBtn) saveBtn.disabled = true;
+    if (deleteBtn) deleteBtn.disabled = true;
+    if (msgEl) { msgEl.textContent = 'Удаление...'; msgEl.className = 'event-save-msg'; }
+    var deletePath = base + '/' + eventId;
+    try {
+      try {
+        await apiRequest('DELETE', deletePath);
+      } catch (delErr) {
+        if (type === 'org' && base === API.EVENTS.ORG && (delErr.message || '').indexOf('404') >= 0) {
+          EVENT_BASE.org = API.EVENTS.ORGANIZATION_LEGACY;
+          base = EVENT_BASE.org;
+          await apiRequest('DELETE', base + '/' + eventId);
+        } else {
+          throw delErr;
+        }
+      }
+      closeEventDetail();
+      resetAndLoad();
+    } catch (err) {
+      console.error('[main] delete event', err);
+      if (msgEl) {
+        msgEl.textContent = (err && err.message) || 'Не удалось удалить мероприятие.';
+        msgEl.className = 'event-save-msg event-save-msg--err';
+      }
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+      if (deleteBtn) deleteBtn.disabled = false;
+    }
+  }
+
   exitCtx.set(requestCloseDetail);
 
   var editFields = keys.filter(function (k) {
@@ -518,6 +555,7 @@ try {
     '    <form class="event-edit-form event-form-grid" id="eventEditForm">' + editFields + '</form>',
     '  </section>',
     documentsSectionHtml,
+    !createMode ? '  <div class="event-detail-bottom-actions"><button type="button" class="event-detail-delete" id="eventDetailDelete">Удалить мероприятие</button></div>' : '',
     '  </div>',
     '</div>'
   ].join('');
@@ -538,6 +576,9 @@ try {
 
   var saveTopBtn = document.getElementById('eventDetailSave');
   if (saveTopBtn) saveTopBtn.addEventListener('click', function () { performSave(); });
+
+  var deleteTopBtn = document.getElementById('eventDetailDelete');
+  if (deleteTopBtn) deleteTopBtn.addEventListener('click', function () { deleteEventDetail(); });
 
   var respEditBtn = document.getElementById('eventRespEditBtn');
   if (respEditBtn) {
