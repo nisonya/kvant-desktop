@@ -282,6 +282,23 @@ module.exports = function renderPixelsView(container) {
     el.className = 'students-msg' + (kind ? ' students-msg--' + kind : '');
   }
 
+  function getTableScrollPosition() {
+    var scrollEl = document.querySelector('#pixelsTableWrap .pixels-table-scroll');
+    if (!scrollEl) return null;
+    return {
+      left: scrollEl.scrollLeft || 0,
+      top: scrollEl.scrollTop || 0
+    };
+  }
+
+  function restoreTableScrollPosition(position) {
+    if (!position) return;
+    var scrollEl = document.querySelector('#pixelsTableWrap .pixels-table-scroll');
+    if (!scrollEl) return;
+    scrollEl.scrollLeft = position.left || 0;
+    scrollEl.scrollTop = position.top || 0;
+  }
+
   function renderTable() {
     var wrap = document.getElementById('pixelsTableWrap');
     if (!wrap) return;
@@ -419,8 +436,10 @@ module.exports = function renderPixelsView(container) {
     renderActionModal();
     try {
       await apiRequest('PUT', API.GROUPS.PIXELS_UPDATE, payload);
+      var tableScrollPosition = getTableScrollPosition();
       rows[actionState.rowIndex] = updated;
       renderTable();
+      restoreTableScrollPosition(tableScrollPosition);
       setMsg('Пиксели начислены: ' + getStudentName(updated) + ' / ' + column.label + '.', 'ok');
       closeActionModal();
     } catch (err) {

@@ -88,4 +88,27 @@ describe('renderer/js/pixels-view.js', () => {
       fine: 15
     }));
   });
+
+  test('позиция таблицы сохраняется после начисления пикселей', async () => {
+    const renderPixelsView = require('../pixels-view.js');
+    const root = document.getElementById('root');
+
+    renderPixelsView(root);
+    await flushPromises();
+    await flushPromises();
+
+    var scrollEl = document.querySelector('.pixels-table-scroll');
+    scrollEl.scrollTop = 120;
+    scrollEl.scrollLeft = 80;
+
+    document.querySelector('[data-column-key="part_of_comp"]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    document.getElementById('pixelsActionConfirm')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    var updatedScrollEl = document.querySelector('.pixels-table-scroll');
+    expect(updatedScrollEl.scrollTop).toBe(120);
+    expect(updatedScrollEl.scrollLeft).toBe(80);
+  });
 });
